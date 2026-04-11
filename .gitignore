@@ -1,0 +1,10 @@
+node_modules/
+dist/
+target/
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+python/.mypy_cache/
+python/.pytest_cache/
+

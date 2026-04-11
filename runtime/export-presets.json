@@ -1,0 +1,24 @@
+[
+  {
+    "name": "Series - Orbs",
+    "settings": {
+      "darktableCliPath": "C:\\Program Files\\darktable\\bin\\darktable-cli.exe",
+      "height": "",
+      "imageType": "jpg",
+      "outputPath": "H:\\Images\\ExportedFromDarktable\\Series-Orbs",
+      "skipExport": false,
+      "width": ""
+    }
+  },
+  {
+    "name": "test1",
+    "settings": {
+      "darktableCliPath": "C:\\Program Files\\darktable\\bin\\darktable-cli.exe",
+      "height": "",
+      "imageType": "jpg",
+      "outputPath": "H:\\Images\\ExportedFromDarktable\\test1",
+      "skipExport": false,
+      "width": ""
+    }
+  }
+]

@@ -1,0 +1,13 @@
+[
+  {
+    "name": "Test Preset",
+    "settings": {
+      "outputPath": "D:/Exports/Test",
+      "imageType": "jpg",
+      "width": "2400",
+      "height": "1600",
+      "skipExport": false,
+      "darktableCliPath": ""
+    }
+  }
+]

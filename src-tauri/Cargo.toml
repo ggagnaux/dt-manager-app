@@ -1,0 +1,19 @@
+[package]
+name = "dt-manager-app"
+version = "0.1.0"
+description = "Cross-platform desktop metadata manager for Darktable."
+authors = ["Codex"]
+edition = "2021"
+
+[lib]
+name = "dt_manager_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0.0", features = [] }
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tauri = { version = "2.0.0", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2.0.0"
