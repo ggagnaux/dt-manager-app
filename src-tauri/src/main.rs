@@ -80,6 +80,14 @@ struct ExportRunPayload {
     success: bool,
 }
 
+#[derive(Serialize, Deserialize)]
+struct SeriesAdminStatePayload {
+    order: Vec<String>,
+    metadata: serde_json::Value,
+    #[serde(rename = "localSeries")]
+    local_series: Vec<serde_json::Value>,
+}
+
 fn run_worker(arguments: &[&str]) -> Result<String, String> {
     let app_root = worker_app_root();
     let worker_script = app_root.join("python").join("main.py");
@@ -586,6 +594,56 @@ fn worker_save_export_preset(
 }
 
 #[tauri::command]
+fn worker_list_series_admin_state() -> WorkerResponse<SeriesAdminStatePayload> {
+    match run_worker_json(&["python/main.py", "list-series-admin-state"]) {
+        Ok(payload) => WorkerResponse {
+            ok: true,
+            data: Some(payload),
+            error: None,
+        },
+        Err(error) => WorkerResponse {
+            ok: false,
+            data: None,
+            error: Some(error),
+        },
+    }
+}
+
+#[tauri::command]
+fn worker_save_series_admin_state(
+    state: serde_json::Value,
+) -> WorkerResponse<SeriesAdminStatePayload> {
+    let state_json = match serde_json::to_string(&state) {
+        Ok(value) => value,
+        Err(error) => {
+            return WorkerResponse {
+                ok: false,
+                data: None,
+                error: Some(format!("Failed to serialize series admin state: {error}")),
+            }
+        }
+    };
+
+    match run_worker_json(&[
+        "python/main.py",
+        "save-series-admin-state",
+        "--state-json",
+        &state_json,
+    ]) {
+        Ok(payload) => WorkerResponse {
+            ok: true,
+            data: Some(payload),
+            error: None,
+        },
+        Err(error) => WorkerResponse {
+            ok: false,
+            data: None,
+            error: Some(error),
+        },
+    }
+}
+
+#[tauri::command]
 fn worker_manage_tag(
     library_db_path: String,
     data_db_path: String,
@@ -663,6 +721,8 @@ fn main() {
             worker_run_export,
             worker_list_export_presets,
             worker_save_export_preset,
+            worker_list_series_admin_state,
+            worker_save_series_admin_state,
             worker_manage_tag
         ])
         .run(tauri::generate_context!())

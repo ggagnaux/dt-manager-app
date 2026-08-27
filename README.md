@@ -17,5 +17,6 @@ The initial product and architecture decisions live in [`docs/architecture.md`](
 From [`dt-manager-app`](E:/Sync/Projects/Darktable-Utilities/dt-manager-app), start the desktop app with:
 
 ```powershell
-npm run tauri dev
+#npm run tauri dev
+run.bat
 ```

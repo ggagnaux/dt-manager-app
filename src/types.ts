@@ -138,3 +138,43 @@ export type SearchFilters = {
   tags: string[];
   limit: number;
 };
+
+export type LibrarySourceKey = "all" | "selected" | "recent" | "unassigned" | "series";
+
+export type LibrarySeriesSource = {
+  key: string;
+  label: string;
+  count: number;
+  tagPath: string;
+};
+
+export type LibrarySeriesRecord = LibrarySeriesSource & {
+  order: number;
+  status: "active" | "archived";
+  sourceKind: "derived" | "local";
+  displayLabel?: string;
+  description: string;
+  coverFilename: string;
+  imageFilenames: string[];
+};
+
+export type PersistedLocalSeries = {
+  key: string;
+  label: string;
+  tagPath: string;
+  description: string;
+  coverFilename: string;
+  status: "active" | "archived";
+  displayLabel?: string;
+};
+
+export type SeriesAdminState = {
+  order: string[];
+  metadata: Record<string, {
+    description?: string;
+    coverFilename?: string;
+    status?: "active" | "archived";
+    displayLabel?: string;
+  }>;
+  localSeries: PersistedLocalSeries[];
+};

@@ -8,7 +8,13 @@ from pathlib import Path
 from dt_manager_worker.darktable_service import inspect_library, list_tags, manage_tag, search_images
 from dt_manager_worker.export_adapter import ExportRequest, build_export_command, run_export
 from dt_manager_worker.models import MetadataEdit
-from dt_manager_worker.app_state import list_export_presets, list_pending_db_sync_jobs, save_export_preset
+from dt_manager_worker.app_state import (
+    list_export_presets,
+    list_pending_db_sync_jobs,
+    list_series_admin_state,
+    save_export_preset,
+    save_series_admin_state,
+)
 from dt_manager_worker.write_executor import apply_metadata_edits, retry_pending_db_sync
 from dt_manager_worker.write_planner import build_write_preview
 from dt_manager_worker.xmp_inspector import inspect_xmp_fields
@@ -65,6 +71,9 @@ def build_parser() -> argparse.ArgumentParser:
     save_preset_parser = subparsers.add_parser("save-export-preset")
     save_preset_parser.add_argument("--name", required=True)
     save_preset_parser.add_argument("--settings-json", required=True)
+    subparsers.add_parser("list-series-admin-state")
+    save_series_state_parser = subparsers.add_parser("save-series-admin-state")
+    save_series_state_parser.add_argument("--state-json", required=True)
 
     inspect_xmp_parser = subparsers.add_parser("inspect-xmp")
     inspect_xmp_parser.add_argument("path", help="Path to an XMP sidecar to inspect.")
@@ -257,6 +266,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "save-export-preset":
         settings = json.loads(args.settings_json)
         print(json.dumps(save_export_preset(args.name, settings)))
+        return 0
+
+    if args.command == "list-series-admin-state":
+        print(json.dumps(list_series_admin_state()))
+        return 0
+
+    if args.command == "save-series-admin-state":
+        state = json.loads(args.state_json)
+        print(json.dumps(save_series_admin_state(state)))
         return 0
 
     print(f"Unsupported command: {args.command}", file=sys.stderr)

@@ -8,6 +8,7 @@ from .xmp_inspector import inspect_xmp_fields
 
 LIBRARY_EXPECTED_TABLES = ("images", "film_rolls", "tagged_images")
 DATA_EXPECTED_TABLES = ("tags",)
+SQLITE_PARAMETER_CHUNK_SIZE = 500
 
 
 def inspect_library(library_db_path: Path, data_db_path: Path | None = None) -> dict[str, object]:
@@ -168,12 +169,12 @@ def search_images(
             tags_by_image[int(row["image_id"])].append(str(row["tag_name"]))
 
         results: list[dict[str, object]] = []
-        requested_tags = {tag.casefold() for tag in tags}
+        requested_tags = [tag.casefold() for tag in tags]
 
         for row in rows:
             image_id = int(row["image_id"])
             image_tags = sorted(tags_by_image.get(image_id, []), key=str.casefold)
-            if requested_tags and not requested_tags.issubset({tag.casefold() for tag in image_tags}):
+            if requested_tags and not _image_matches_requested_tags(image_tags, requested_tags):
                 continue
 
             source_path = Path(str(row["folder"])) / str(row["filename"])
@@ -188,6 +189,18 @@ def search_images(
                 break
 
         return results
+
+
+def _image_matches_requested_tags(image_tags: list[str], requested_tags: list[str]) -> bool:
+    normalized_image_tags = [tag.casefold() for tag in image_tags]
+    for requested_tag in requested_tags:
+        requested_branch = f"{requested_tag}|"
+        if not any(
+            image_tag == requested_tag or image_tag.startswith(requested_branch)
+            for image_tag in normalized_image_tags
+        ):
+            return False
+    return True
 
 
 def load_images_by_ids(
@@ -292,15 +305,19 @@ def _tag_table_name(connection: sqlite3.Connection) -> str:
 def _load_tags_for_images(
     connection: sqlite3.Connection, tag_table: str, image_ids: list[int]
 ) -> list[sqlite3.Row]:
-    placeholders = ", ".join("?" for _ in image_ids)
-    query = f"""
-        SELECT ti.imgid AS image_id, t.name AS tag_name
-        FROM tagged_images AS ti
-        INNER JOIN {tag_table} AS t ON t.id = ti.tagid
-        WHERE ti.imgid IN ({placeholders})
-        ORDER BY lower(t.name)
-    """
-    return connection.execute(query, image_ids).fetchall()
+    rows: list[sqlite3.Row] = []
+    for index in range(0, len(image_ids), SQLITE_PARAMETER_CHUNK_SIZE):
+        chunk = image_ids[index:index + SQLITE_PARAMETER_CHUNK_SIZE]
+        placeholders = ", ".join("?" for _ in chunk)
+        query = f"""
+            SELECT ti.imgid AS image_id, t.name AS tag_name
+            FROM tagged_images AS ti
+            INNER JOIN {tag_table} AS t ON t.id = ti.tagid
+            WHERE ti.imgid IN ({placeholders})
+            ORDER BY lower(t.name)
+        """
+        rows.extend(connection.execute(query, chunk).fetchall())
+    return rows
 
 
 def _color_label_to_value(label: str | None) -> int | str:

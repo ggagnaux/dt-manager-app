@@ -66,6 +66,29 @@ def export_presets_path() -> Path:
     return Path.cwd() / "runtime" / "export-presets.json"
 
 
+def list_series_admin_state() -> dict[str, object]:
+    state = _load_json_object(series_admin_state_path())
+    return {
+        "order": state.get("order", []),
+        "metadata": state.get("metadata", {}),
+        "localSeries": state.get("localSeries", []),
+    }
+
+
+def save_series_admin_state(state: dict[str, object]) -> dict[str, object]:
+    normalized = {
+        "order": list(state.get("order", [])),
+        "metadata": dict(state.get("metadata", {})),
+        "localSeries": list(state.get("localSeries", [])),
+    }
+    _save_json_object(series_admin_state_path(), normalized)
+    return normalized
+
+
+def series_admin_state_path() -> Path:
+    return Path.cwd() / "runtime" / "series-admin-state.json"
+
+
 def _load_state() -> list[dict[str, object]]:
     return _load_json_list(pending_state_path())
 
@@ -81,5 +104,16 @@ def _load_json_list(path: Path) -> list[dict[str, object]]:
 
 
 def _save_json_list(path: Path, state: list[dict[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def _load_json_object(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _save_json_object(path: Path, state: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(state, indent=2), encoding="utf-8")

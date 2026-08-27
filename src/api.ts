@@ -7,6 +7,7 @@ import type {
   ImageRecord,
   PendingEdit,
   PendingDbSyncJob,
+  SeriesAdminState,
   SearchFilters,
   RetryPendingDbSyncResult,
   WritePlanPreview,
@@ -98,4 +99,12 @@ export async function manageTag(
   value: string,
 ): Promise<WorkerResponse<{ summary: string }>> {
   return invoke("worker_manage_tag", { libraryDbPath, dataDbPath, action, tagPath, value });
+}
+
+export async function listSeriesAdminState(): Promise<WorkerResponse<SeriesAdminState>> {
+  return invoke("worker_list_series_admin_state");
+}
+
+export async function saveSeriesAdminState(state: SeriesAdminState): Promise<WorkerResponse<SeriesAdminState>> {
+  return invoke("worker_save_series_admin_state", { state });
 }
