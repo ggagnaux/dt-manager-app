@@ -4,6 +4,7 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 from .models import MetadataEdit
+from .tags import image_tags, normalize_tags
 
 NS = {
     "x": "adobe:ns:meta/",
@@ -29,11 +30,9 @@ def apply_edit_to_xmp(
     root = _load_or_create_root(resolved_xmp_path)
     description = _ensure_description(root)
 
-    current_hierarchical = _read_list(current_metadata.get("hierarchicalTags"))
-    current_flat = _read_list(current_metadata.get("tags"))
-    requested_tags = _normalize_tags(edit.tags)
-    next_hierarchical = _apply_tag_mode(current_hierarchical, requested_tags, edit.mode)
-    next_flat = _flatten_tags(next_hierarchical, current_flat)
+    current_tags = image_tags(current_metadata)
+    requested_tags = normalize_tags(edit.tags)
+    next_tags = _apply_tag_mode(current_tags, requested_tags, edit.mode)
 
     _set_alt_text(description, "title", edit.title.strip() or str(current_metadata.get("title", "")))
     _set_alt_text(
@@ -43,8 +42,8 @@ def apply_edit_to_xmp(
     )
     _set_seq_text(description, "creator", str(current_metadata.get("creator", "")))
     _set_alt_text(description, "rights", str(current_metadata.get("rights", "")))
-    _set_bag_values(description, "subject", next_flat, namespace="dc")
-    _set_bag_values(description, "hierarchicalSubject", next_hierarchical, namespace="lr")
+    _set_bag_values(description, "subject", next_tags, namespace="dc")
+    _set_bag_values(description, "hierarchicalSubject", next_tags, namespace="lr")
 
     if edit.rating is not None:
         description.set(_qualified("xmp", "Rating"), str(edit.rating))
@@ -141,29 +140,8 @@ def _qualified(prefix: str, local_name: str) -> str:
     return f"{{{NS[prefix]}}}{local_name}"
 
 
-def _read_list(raw_value: object) -> list[str]:
-    if not isinstance(raw_value, list):
-        return []
-    return [str(item) for item in raw_value if str(item).strip()]
-
-
-def _normalize_tags(tags: list[str]) -> list[str]:
-    seen: set[str] = set()
-    normalized: list[str] = []
-    for tag in tags:
-        stripped = tag.strip()
-        if not stripped:
-            continue
-        key = stripped.casefold()
-        if key in seen:
-            continue
-        seen.add(key)
-        normalized.append(stripped)
-    return sorted(normalized, key=str.casefold)
-
-
 def _apply_tag_mode(current_tags: list[str], requested_tags: list[str], mode: str) -> list[str]:
-    if not requested_tags:
+    if not requested_tags and mode != "replace":
         return list(current_tags)
     if mode == "replace":
         return list(requested_tags)
@@ -175,20 +153,6 @@ def _apply_tag_mode(current_tags: list[str], requested_tags: list[str], mode: st
     for tag in requested_tags:
         merged[tag.casefold()] = tag
     return sorted(merged.values(), key=str.casefold)
-
-
-def _flatten_tags(hierarchical_tags: list[str], fallback_flat: list[str]) -> list[str]:
-    flat_tags: list[str] = []
-    seen: set[str] = set()
-    source_values = hierarchical_tags or fallback_flat
-    for tag in source_values:
-        parts = [part for part in tag.split("|") if part]
-        for part in parts:
-            key = part.casefold()
-            if key not in seen:
-                seen.add(key)
-                flat_tags.append(part)
-    return sorted(flat_tags, key=str.casefold)
 
 
 def _color_label_to_value(label: str) -> int:

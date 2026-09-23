@@ -19,6 +19,7 @@ class ExportRequest:
     width: int | None = None
     height: int | None = None
     skip_export: bool = False
+    clear_folder_before_export: bool = False
     rating: int | None = None
     color_label: str | None = None
 
@@ -61,9 +62,27 @@ def build_export_command(request: ExportRequest) -> list[str]:
 
 
 def run_export(request: ExportRequest) -> dict[str, object]:
-    command, manifest_path = _workspace_export_command(request)
+    destination, files = _export_destination(request)
+    request.output_path = str(destination)
+    if files and not request.clear_folder_before_export:
+        return {
+            "command": [], "exitCode": 0, "stdout": "", "stderr": "", "success": False,
+            "confirmationRequired": True, "destinationPath": str(destination), "existingFileCount": len(files),
+        }
     exporter_root = _exporter_root()
+    if not exporter_root.is_dir():
+        raise ValueError("The export tool folder is unavailable; no destination files were removed.")
+    command, manifest_path = _workspace_export_command(request)
     try:
+        # Recheck immediately before deletion, including files created during preparation.
+        destination, files = _export_destination(request)
+        if files and not request.clear_folder_before_export:
+            raise ValueError("The destination changed during export preparation. Run export again to confirm clearing it.")
+        for file in files:
+            # Only unlink direct file entries. Never recurse into directories or junctions.
+            if file.parent.resolve() != destination:
+                raise ValueError("The destination folder changed. Export aborted.")
+            file.unlink()
         completed = subprocess.run(
             command,
             cwd=exporter_root,
@@ -82,6 +101,34 @@ def run_export(request: ExportRequest) -> dict[str, object]:
         "success": completed.returncode == 0,
     }
 
+
+
+def _export_destination(request: ExportRequest) -> tuple[Path, list[Path]]:
+    if not request.output_path.strip():
+        raise ValueError("Choose an export destination folder.")
+    destination = Path(request.output_path).expanduser().resolve()
+    if request.skip_export:
+        return destination, []
+    app_root = Path(__file__).resolve().parents[2]
+    protected_directories = {
+        Path(destination.anchor), Path.home().resolve(), Path.cwd().resolve(),
+        app_root, (Path.cwd() / "runtime").resolve(), _exporter_root().resolve(),
+    }
+    if destination in protected_directories:
+        raise ValueError("Choose a dedicated export folder, not a drive root, home, or application folder.")
+    protected_files = [request.db_path, request.data_db_path, *(request.source_paths or [])]
+    if any(destination in {Path(value).resolve().parent, Path(value).absolute().parent.resolve()} for value in protected_files if value):
+        raise ValueError("The destination contains source images or a Darktable database. Choose a separate export folder.")
+    if not request.source_paths:
+        raise ValueError("Explicit source images are required before preparing the export folder.")
+    if any(not Path(value).is_file() for value in request.source_paths):
+        raise ValueError("A source image is unavailable; no destination files were removed.")
+    if not destination.exists():
+        return destination, []
+    if not destination.is_dir():
+        raise ValueError("The export destination is not a folder.")
+    files = [entry for entry in destination.iterdir() if entry.is_file() or (entry.is_symlink() and not entry.is_dir())]
+    return destination, files
 
 def _workspace_export_command(request: ExportRequest) -> tuple[list[str], Path | None]:
     command = ["python", "-m", "src.cli"]

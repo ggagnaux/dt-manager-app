@@ -5,6 +5,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from .xmp_inspector import inspect_xmp_fields
+from .tags import resolve_xmp_tags
 
 LIBRARY_EXPECTED_TABLES = ("images", "film_rolls", "tagged_images")
 DATA_EXPECTED_TABLES = ("tags",)
@@ -359,6 +360,11 @@ def _build_image_payload(
     xmp_data: dict[str, object],
     image_tags: list[str],
 ) -> dict[str, object]:
+    tags = resolve_xmp_tags(
+        xmp_data.get("flatSubjects", image_tags),
+        xmp_data.get("hierarchicalSubjects", []),
+        image_tags,
+    )
     return {
         "id": int(row["image_id"]),
         "filename": str(row["filename"]),
@@ -373,8 +379,8 @@ def _build_image_payload(
         "notes": xmp_data.get("notes", ""),
         "rating": int(row["rating"]),
         "colorLabel": _first_color_label_name(xmp_data.get("colorLabels", [])),
-        "tags": xmp_data.get("flatSubjects", image_tags),
-        "hierarchicalTags": xmp_data.get("hierarchicalSubjects", []),
+        "tags": tags,
+        "hierarchicalTags": [tag for tag in tags if "|" in tag],
     }
 
 

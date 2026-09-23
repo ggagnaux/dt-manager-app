@@ -1,4 +1,4 @@
-import type { ExportFilterSettings, ImageRecord } from "../../types";
+import type { ExportFilterSettings, ImageRecord, PendingEdit } from "../../types";
 
 export function collectExportSourcePaths(
   images: ImageRecord[],
@@ -60,4 +60,21 @@ export function imageMatchesTag(image: ImageRecord, requestedTag: string): boole
 
   const hierarchicalTags = (image.hierarchicalTags ?? []).map((tag) => tag.toLocaleLowerCase());
   return hierarchicalTags.some((tag) => tag === normalized || tag.startsWith(`${normalized}|`));
+}
+
+export function hasMetadataChanges(image: ImageRecord, edit: PendingEdit): boolean {
+  if ((edit.title.trim() && edit.title.trim() !== image.title)
+    || (edit.description.trim() && edit.description.trim() !== image.description)
+    || (edit.rating !== null && edit.rating !== image.rating)
+    || (edit.colorLabel !== null && edit.colorLabel !== image.colorLabel)) {
+    return true;
+  }
+
+  const normalize = (tags: string[]) => new Set(tags.map((tag) => tag.trim().toLocaleLowerCase()).filter(Boolean));
+  const currentTags = normalize([...image.tags, ...(image.hierarchicalTags ?? [])]);
+  const requestedTags = normalize(edit.tags);
+  if (requestedTags.size === 0 && edit.mode !== "replace") return false;
+  if (edit.mode === "remove") return [...requestedTags].some((tag) => currentTags.has(tag));
+  if (edit.mode === "add") return [...requestedTags].some((tag) => !currentTags.has(tag));
+  return currentTags.size !== requestedTags.size || [...requestedTags].some((tag) => !currentTags.has(tag));
 }

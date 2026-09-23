@@ -106,6 +106,7 @@ export type ExportSettings = {
   width: string;
   height: string;
   skipExport: boolean;
+  clearFolderBeforeExport: boolean;
   darktableCliPath: string;
 };
 
@@ -121,6 +122,9 @@ export type ExportFilterSettings = {
 };
 
 export type ExportRunResult = {
+  confirmationRequired?: boolean;
+  destinationPath?: string;
+  existingFileCount?: number;
   command: string[];
   exitCode: number;
   stdout: string;
@@ -138,6 +142,12 @@ export type SearchFilters = {
   tags: string[];
   limit: number;
 };
+
+export type SearchSettings = {
+  resultLimit: number;
+};
+
+export const SEARCH_RESULT_LIMIT_OPTIONS = [20, 50, 75, 100, 200, 400, 500] as const;
 
 export type LibrarySourceKey = "all" | "selected" | "recent" | "unassigned" | "series";
 

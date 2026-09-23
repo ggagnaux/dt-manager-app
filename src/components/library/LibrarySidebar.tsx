@@ -1,8 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import { LibraryFilters } from "./LibraryFilters";
-import { DetailRow } from "./LibraryShared";
 import type {
-  ConnectionState,
   LibrarySeriesSource,
   LibrarySourceKey,
   PendingDbSyncJob,
@@ -10,16 +8,12 @@ import type {
 } from "../../types";
 
 export function LibrarySidebar({
-  connection,
-  workerMessage,
   pendingDbSyncJobs,
-  selectedTagPath,
-  availableTagCount,
-  tagStatus,
   isConnected,
   imageCount,
   totalImageCount,
   selectedCount,
+  queryInProgress,
   activeSource,
   activeSeriesSourceKey,
   sourceCounts,
@@ -37,16 +31,12 @@ export function LibrarySidebar({
   onResetFilters,
   onSearch,
 }: {
-  connection: ConnectionState;
-  workerMessage: string;
   pendingDbSyncJobs: PendingDbSyncJob[];
-  selectedTagPath: string;
-  availableTagCount: number;
-  tagStatus: string;
   isConnected: boolean;
   imageCount: number;
   totalImageCount: number;
   selectedCount: number;
+  queryInProgress: boolean;
   activeSource: LibrarySourceKey;
   activeSeriesSourceKey: string | null;
   sourceCounts: Record<Exclude<LibrarySourceKey, "series">, number>;
@@ -77,41 +67,14 @@ export function LibrarySidebar({
 
   return (
     <aside className="sidebar">
+      {false ? (
       <div className="sidebar-zone sidebar-zone-browse">
-        <div className="brand-block library-sidebar-header">
-          <p className="eyebrow">Library</p>
-          <div className="library-sidebar-title-row">
-            <h1>DT Manager</h1>
-            <span className="status-pill sidebar-mini-pill">{isConnected ? "Online" : "Offline"}</span>
-          </div>
-        </div>
-
         <div className="sidebar-section-heading">
           <span>Browse</span>
         </div>
 
         <div className="sidebar-group">
-          <section className="panel sidebar-summary-panel">
-            <div className="panel-header">
-              <h2>Current Set</h2>
-              <span className="muted">{imageCount} / {totalImageCount}</span>
-            </div>
-            <div className="sidebar-metric-grid">
-              <div className="sidebar-metric-card">
-                <span className="sidebar-metric-label">Visible</span>
-                <strong>{imageCount}</strong>
-              </div>
-              <div className="sidebar-metric-card">
-                <span className="sidebar-metric-label">Selected</span>
-                <strong>{selectedCount}</strong>
-              </div>
-              <div className="sidebar-metric-card">
-                <span className="sidebar-metric-label">Pending Sync</span>
-                <strong>{pendingDbSyncJobs.length}</strong>
-              </div>
-            </div>
-          </section>
-
+          {false ? (
           <section className="panel sidebar-source-panel">
             <div className="sidebar-series-header">
               <div>
@@ -211,18 +174,21 @@ export function LibrarySidebar({
               )}
             </div>
           </section>
+          ) : null}
         </div>
       </div>
+      ) : null}
 
       <div className="sidebar-zone sidebar-zone-refine">
-        <div className="sidebar-section-heading">
+        {/* <div className="sidebar-section-heading">
           <span>Refine</span>
-        </div>
+        </div> */}
         <LibraryFilters
           filters={filters}
           isConnected={isConnected}
           resultCount={imageCount}
           selectedCount={selectedCount}
+          queryInProgress={queryInProgress}
           variant="sidebar"
           colorLabelOptions={colorLabelOptions}
           onFiltersChange={onFiltersChange}
@@ -232,35 +198,6 @@ export function LibrarySidebar({
         />
       </div>
 
-      <div className="sidebar-footer">
-        <div className="sidebar-footer-header">
-          <span className="sidebar-footer-title">Status</span>
-          <span className={`status-pill status-${connection.status}`}>
-            {connection.status === "ready"
-              ? "Connected"
-              : connection.status === "read_only"
-                ? "Read Only"
-                : connection.status === "write_blocked"
-                  ? "Write Blocked"
-                  : "Not Connected"}
-          </span>
-        </div>
-        <div className="sidebar-footer-meta">
-          <span className="worker-state">{workerMessage}</span>
-          <span className="muted">{connection.detail}</span>
-        </div>
-        <div className={`sidebar-footer-summary ${!isConnected ? "panel-locked" : ""}`}>
-          <div className="settings-summary">
-            <DetailRow label="Selected Tag" value={selectedTagPath || "No tag selected"} />
-            <DetailRow label="Available Tags" value={String(availableTagCount)} />
-          </div>
-          <div className="pending-sync-bar sidebar-footer-sync">
-            <span>{pendingDbSyncJobs.length} pending sync items</span>
-          </div>
-          {tagStatus ? <p className="write-status">{tagStatus}</p> : null}
-          {!isConnected ? <div className="panel-lock-overlay">Connect to Darktable to browse and manage tags.</div> : null}
-        </div>
-      </div>
     </aside>
   );
 }

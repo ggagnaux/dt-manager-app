@@ -1,23 +1,29 @@
+import { AiSettingsPanel } from "../components/AiSettingsPanel";
 import type { Dispatch, SetStateAction } from "react";
-import type { ConnectionState, ExportSettings } from "../types";
+import { SEARCH_RESULT_LIMIT_OPTIONS } from "../types";
+import type { ConnectionState, ExportSettings, SearchSettings } from "../types";
 
 export function SettingsView({
   connection,
   exportSettings,
+  searchSettings,
   theme,
   onPickDatabasePath,
   onPickExportPath,
   onConnectionChange,
   onExportSettingsChange,
+  onSearchSettingsChange,
   onThemeChange,
 }: {
   connection: ConnectionState;
   exportSettings: ExportSettings;
+  searchSettings: SearchSettings;
   theme: "dark" | "light";
   onPickDatabasePath: (field: "libraryDbPath" | "dataDbPath") => Promise<void>;
   onPickExportPath: (field: "outputPath" | "darktableCliPath") => Promise<void>;
   onConnectionChange: Dispatch<SetStateAction<ConnectionState>>;
   onExportSettingsChange: Dispatch<SetStateAction<ExportSettings>>;
+  onSearchSettingsChange: Dispatch<SetStateAction<SearchSettings>>;
   onThemeChange: Dispatch<SetStateAction<"dark" | "light">>;
 }) {
   return (
@@ -35,6 +41,7 @@ export function SettingsView({
         </div>
 
         <div className="settings-layout-grid">
+          <AiSettingsPanel />
           <section className="panel settings-section-panel">
             <div className="panel-header">
               <h3>Darktable Paths</h3>
@@ -73,6 +80,29 @@ export function SettingsView({
 
           <section className="panel settings-section-panel">
             <div className="panel-header">
+              <h3>Library Search</h3>
+              <span className="muted">Query defaults</span>
+            </div>
+            <label>
+              <span>Record limit</span>
+              <select
+                value={searchSettings.resultLimit}
+                onChange={(event) =>
+                  onSearchSettingsChange((current) => ({
+                    ...current,
+                    resultLimit: Number(event.target.value),
+                  }))
+                }
+              >
+                {SEARCH_RESULT_LIMIT_OPTIONS.map((limit) => (
+                  <option key={limit} value={limit}>{limit} records</option>
+                ))}
+              </select>
+            </label>
+          </section>
+
+          <section className="panel settings-section-panel">
+            <div className="panel-header">
               <h3>Export Tooling</h3>
               <span className="muted">Shared defaults</span>
             </div>
@@ -101,6 +131,14 @@ export function SettingsView({
                 />
                 <button className="ghost" onClick={() => void onPickExportPath("outputPath")}>Browse</button>
               </div>
+            </label>
+            <label className="checkbox-row">
+              <span>Clear folder before export</span>
+              <input
+                type="checkbox"
+                checked={exportSettings.clearFolderBeforeExport ?? false}
+                onChange={(event) => onExportSettingsChange((current) => ({ ...current, clearFolderBeforeExport: event.target.checked }))}
+              />
             </label>
           </section>
 

@@ -108,3 +108,17 @@ export async function listSeriesAdminState(): Promise<WorkerResponse<SeriesAdmin
 export async function saveSeriesAdminState(state: SeriesAdminState): Promise<WorkerResponse<SeriesAdminState>> {
   return invoke("worker_save_series_admin_state", { state });
 }
+
+export type AiSettings = {
+  endpoint: string;
+  model: string;
+  prompt: string;
+  hasApiKey: boolean;
+  applyAiGeneratedTagsImmediately: boolean;
+};
+
+export async function aiRequest<T>(action: "load" | "save" | "generate" | "generate-tags", payload: Record<string, unknown> = {}): Promise<T> {
+  const response = await invoke<WorkerResponse<T>>("ai_request", { action, payload });
+  if (!response.ok || !response.data) throw new Error(response.error || "AI request failed.");
+  return response.data;
+}

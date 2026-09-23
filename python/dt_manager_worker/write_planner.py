@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .darktable_service import load_images_by_ids
 from .models import MetadataEdit
+from .tags import image_tags, normalize_tags
 
 
 def build_write_preview(
@@ -31,7 +32,7 @@ def build_write_preview(
             "imagePlans": [],
         }
 
-    requested_tags = _normalize_tags(edit.tags)
+    requested_tags = normalize_tags(edit.tags)
     plans: list[dict[str, object]] = []
     aggregate = {
         "tagsAdded": 0,
@@ -44,10 +45,12 @@ def build_write_preview(
     xmp_missing_count = 0
 
     for image in images:
-        current_tags = _normalize_tags(_read_tags(image))
+        current_tags = image_tags(image)
         next_tags = _apply_tag_mode(current_tags, requested_tags, edit.mode)
-        added_tags = [tag for tag in next_tags if tag not in current_tags]
-        removed_tags = [tag for tag in current_tags if tag not in next_tags]
+        current_keys = {tag.casefold() for tag in current_tags}
+        next_keys = {tag.casefold() for tag in next_tags}
+        added_tags = [tag for tag in next_tags if tag.casefold() not in current_keys]
+        removed_tags = [tag for tag in current_tags if tag.casefold() not in next_keys]
         field_changes: list[str] = []
 
         if added_tags:
@@ -119,23 +122,8 @@ def build_write_preview(
     }
 
 
-def _normalize_tags(tags: list[str]) -> list[str]:
-    seen: set[str] = set()
-    normalized: list[str] = []
-    for tag in tags:
-        stripped = tag.strip()
-        if not stripped:
-            continue
-        key = stripped.casefold()
-        if key in seen:
-            continue
-        seen.add(key)
-        normalized.append(stripped)
-    return sorted(normalized, key=str.casefold)
-
-
 def _apply_tag_mode(current_tags: list[str], requested_tags: list[str], mode: str) -> list[str]:
-    if not requested_tags:
+    if not requested_tags and mode != "replace":
         return list(current_tags)
 
     current_lookup = {tag.casefold(): tag for tag in current_tags}
@@ -150,10 +138,3 @@ def _apply_tag_mode(current_tags: list[str], requested_tags: list[str], mode: st
     merged = dict(current_lookup)
     merged.update(requested_lookup)
     return sorted(merged.values(), key=str.casefold)
-
-
-def _read_tags(image: dict[str, object]) -> list[str]:
-    raw_tags = image.get("hierarchicalTags") or image.get("tags") or []
-    if isinstance(raw_tags, list):
-        return [str(tag) for tag in raw_tags]
-    return []

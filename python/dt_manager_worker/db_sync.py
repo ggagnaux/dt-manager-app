@@ -30,7 +30,7 @@ def sync_darktable_database(
         current_tag_map = _load_current_tags(connection, tag_table, normalized_ids)
 
         for image_id in normalized_ids:
-            if edit.tags:
+            if edit.tags or edit.mode == "replace":
                 desired_tags = _apply_tag_mode(current_tag_map.get(image_id, []), edit.tags, edit.mode)
                 _replace_image_tags(connection, tag_table, image_id, desired_tags)
 
@@ -143,7 +143,7 @@ def _ensure_tag(connection: sqlite3.Connection, tag_table: str, tag_name: str) -
 
 def _apply_tag_mode(current_tags: list[str], requested_tags: list[str], mode: str) -> list[str]:
     normalized_requested = {tag.casefold(): tag for tag in requested_tags if tag.strip()}
-    if not normalized_requested:
+    if not normalized_requested and mode != "replace":
         return sorted(current_tags, key=str.casefold)
     if mode == "replace":
         return sorted(normalized_requested.values(), key=str.casefold)

@@ -151,6 +151,15 @@ export function ExportPresetsView({
               <span>Metadata only (skip image export)</span>
             </label>
 
+            <label className="checkbox-row">
+              <span>Clear folder before export</span>
+              <input
+                type="checkbox"
+                checked={exportSettings.clearFolderBeforeExport ?? false}
+                onChange={(event) => onExportSettingsChange((current) => ({ ...current, clearFolderBeforeExport: event.target.checked }))}
+              />
+            </label>
+
             <div className="series-action-row">
               <button type="button" onClick={onSaveExportPreset}>Save Preset</button>
             </div>

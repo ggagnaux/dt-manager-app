@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
+import { hasMetadataChanges } from "../components/library/libraryUtils";
 import {
   applyMetadataEdits,
   listPendingDbSync,
@@ -7,6 +9,7 @@ import {
 } from "../api";
 import type {
   ConnectionState,
+  ImageRecord,
   PendingDbSyncJob,
   PendingEdit,
   WritePlanPreview,
@@ -14,7 +17,7 @@ import type {
 
 const initialEdit: PendingEdit = {
   mode: "add",
-  tags: ["Portfolio"],
+  tags: [],
   title: "",
   description: "",
   rating: null,
@@ -26,20 +29,59 @@ const initialPlanPreviewMessage = "Preview changes before saving.";
 export function useLibraryEditState({
   connection,
   selectedIds,
+  selectedImage,
   onRefreshLibraryData,
 }: {
   connection: ConnectionState;
   selectedIds: number[];
-  onRefreshLibraryData: (libraryDbPath: string, dataDbPath: string) => Promise<void>;
+  selectedImage: ImageRecord | null;
+  onRefreshLibraryData: (libraryDbPath: string, dataDbPath: string, preserveSelection?: boolean) => Promise<void>;
 }) {
-  const [pendingEdit, setPendingEdit] = useState<PendingEdit>(initialEdit);
+  const [pendingEdit, setPendingEditState] = useState<PendingEdit>(initialEdit);
   const [planPreview, setPlanPreview] = useState<WritePlanPreview | null>(null);
   const [planPreviewMessage, setPlanPreviewMessage] = useState(initialPlanPreviewMessage);
   const [writeStatus, setWriteStatus] = useState("");
   const [pendingDbSyncJobs, setPendingDbSyncJobs] = useState<PendingDbSyncJob[]>([]);
   const [tagDraft, setTagDraft] = useState("");
+  const [saveInProgress, setSaveInProgress] = useState(false);
+  const savePromise = useRef<Promise<boolean> | null>(null);
+  const saveBusy = useRef(false);
+  const selectionBusy = useRef(false);
+  const currentConnection = useRef("");
+  currentConnection.current = JSON.stringify([connection.libraryDbPath, connection.dataDbPath]);
+  const setPendingEdit: Dispatch<SetStateAction<PendingEdit>> = update => {
+    if (!saveBusy.current) setPendingEditState(update);
+  };
+
+  const selectionKey = JSON.stringify([connection.libraryDbPath, connection.dataDbPath, selectedIds]);
+  const editImage = selectedIds.length === 1 && selectedImage?.id === selectedIds[0]
+    ? selectedImage
+    : null;
+  const requestVersion = useRef(0);
+  const [draftImage, setDraftImage] = useState<ImageRecord | null>(null);
+
+  useEffect(() => {
+    setDraftImage(editImage);
+    setPendingEditState(editImage ? {
+      mode: "replace",
+      tags: Array.from(new Set([...editImage.tags, ...(editImage.hierarchicalTags ?? [])])),
+      title: editImage.title,
+      description: editImage.description,
+      rating: editImage.rating,
+      colorLabel: editImage.colorLabel,
+    } : { ...initialEdit, tags: [] });
+    setTagDraft("");
+  }, [selectionKey, editImage]);
+
+  useEffect(() => {
+    requestVersion.current += 1;
+    setPlanPreview(null);
+    setPlanPreviewMessage(initialPlanPreviewMessage);
+    return () => { requestVersion.current += 1; };
+  }, [selectionKey, editImage, pendingEdit]);
 
   async function handlePreviewPlan() {
+    const version = ++requestVersion.current;
     if (!connection.libraryDbPath) {
       setPlanPreview(null);
       setPlanPreviewMessage("Connect to a Darktable library before previewing changes.");
@@ -52,6 +94,7 @@ export function useLibraryEditState({
       selectedIds,
       pendingEdit,
     );
+    if (version !== requestVersion.current) return;
     if (response.ok && response.data) {
       setPlanPreview(response.data);
       setPlanPreviewMessage(
@@ -70,28 +113,64 @@ export function useLibraryEditState({
     }
   }
 
-  async function handleApplyEdits() {
-    if (!connection.libraryDbPath) {
-      setWriteStatus("Connect to a Darktable library before applying edits.");
-      return;
+  function handleApplyEdits(): Promise<boolean> {
+    if (savePromise.current) return savePromise.current;
+    if (!connection.libraryDbPath || !selectedIds.length) {
+      setWriteStatus("Select an image in a connected library before saving.");
+      return Promise.resolve(false);
     }
+    // Capture the old selection and draft before any asynchronous work.
+    const ids = [...selectedIds];
+    const edit = { ...pendingEdit, tags: [...pendingEdit.tags] };
+    const { libraryDbPath, dataDbPath } = connection;
+    const connectionKey = currentConnection.current;
+    saveBusy.current = true;
+    setSaveInProgress(true);
+    setWriteStatus("Saving changes...");
+    const operation = (async () => {
+      try {
+        const response = await applyMetadataEdits(libraryDbPath, dataDbPath, ids, edit);
+        if (connectionKey !== currentConnection.current) return false;
+        if (!response.ok || !response.data || response.data.writtenCount !== ids.length) {
+          setWriteStatus(response.error || "Changes could not be saved. Your edits have been kept; try Save Changes again.");
+          return false;
+        }
+        const message = response.data.dbSyncStatus === "pending"
+          ? "Changes saved to XMP. Database sync is queued for retry."
+          : response.data.summary;
+        try {
+          await onRefreshLibraryData(libraryDbPath, dataDbPath, true);
+          await refreshPendingDbSyncJobs();
+          setWriteStatus(message);
+        } catch {
+          setWriteStatus(`${message} The library could not be refreshed; refresh it to see the saved changes.`);
+        }
+        return connectionKey === currentConnection.current;
+      } catch (error) {
+        setWriteStatus(error instanceof Error ? error.message : "Unable to save changes. Your edits have been kept.");
+        return false;
+      } finally {
+        saveBusy.current = false;
+        savePromise.current = null;
+        setSaveInProgress(false);
+      }
+    })();
+    savePromise.current = operation;
+    return operation;
+  }
 
-    const response = await applyMetadataEdits(
-      connection.libraryDbPath,
-      connection.dataDbPath,
-      selectedIds,
-      pendingEdit,
-    );
-
-    if (response.ok && response.data) {
-      setWriteStatus(response.data.summary);
-      await onRefreshLibraryData(connection.libraryDbPath, connection.dataDbPath);
-      await handlePreviewPlan();
-      await refreshPendingDbSyncJobs();
-      return;
+  async function requestSelectionChange(nextIds: number[], commit: (ids: number[]) => void): Promise<boolean> {
+    if (selectionBusy.current) return false;
+    if (nextIds.length === selectedIds.length && nextIds.every((id, index) => id === selectedIds[index])) return true;
+    selectionBusy.current = true;
+    try {
+      const dirty = editImage && draftImage === editImage && hasMetadataChanges(editImage, pendingEdit);
+      if ((savePromise.current || dirty) && !await handleApplyEdits()) return false;
+      commit(nextIds);
+      return true;
+    } finally {
+      selectionBusy.current = false;
     }
-
-    setWriteStatus(response.error ?? "Failed to apply metadata edits.");
   }
 
   async function handleRetryPendingDbSync() {
@@ -100,7 +179,7 @@ export function useLibraryEditState({
       setWriteStatus(response.data.summary);
       await refreshPendingDbSyncJobs();
       if (connection.libraryDbPath) {
-        await onRefreshLibraryData(connection.libraryDbPath, connection.dataDbPath);
+        await onRefreshLibraryData(connection.libraryDbPath, connection.dataDbPath, true);
       }
       return;
     }
@@ -136,8 +215,13 @@ export function useLibraryEditState({
   }
 
   return {
+    pendingImageId: editImage && draftImage === editImage && hasMetadataChanges(editImage, pendingEdit)
+      ? editImage.id
+      : null,
     pendingEdit,
     setPendingEdit,
+    saveInProgress,
+    requestSelectionChange,
     planPreview,
     planPreviewMessage,
     writeStatus,

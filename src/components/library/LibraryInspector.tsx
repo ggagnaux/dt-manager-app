@@ -1,9 +1,12 @@
-import { useState } from "react";
+import { GenerateTagsButton } from "./GenerateTagsButton";
+import { aiRequest } from "../../api";
+import { useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import {
   ColorLabelValue,
   DetailRow,
   PreviewThumb,
+  RatingStars,
 } from "./LibraryShared";
 import type {
   ConnectionState,
@@ -16,6 +19,7 @@ import type {
 } from "../../types";
 
 export function LibraryInspector({
+  saveInProgress = false,
   selectedIds,
   selectedImage,
   hasSelection,
@@ -47,6 +51,7 @@ export function LibraryInspector({
   onPreviewPlan,
   onApplyEdits,
 }: {
+  saveInProgress?: boolean;
   selectedIds: number[];
   selectedImage: ImageRecord | null;
   hasSelection: boolean;
@@ -79,9 +84,64 @@ export function LibraryInspector({
   onApplyEdits: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<"details" | "edit" | "export">("details");
+  const generateDescriptionDialogRef = useRef<HTMLDialogElement>(null);
+  const [generatingDescription, setGeneratingDescription] = useState(false);
+  const [generationStatus, setGenerationStatus] = useState("");
+  const generationVersion = useRef(0);
+  const generationBusy = useRef(false);
+  const generationSelection = JSON.stringify([connection.libraryDbPath, selectedIds, selectedImage?.sourcePath]);
+
+  useEffect(() => {
+    generationVersion.current += 1;
+    setGenerationStatus("");
+    generateDescriptionDialogRef.current?.close();
+    return () => { generationVersion.current += 1; };
+  }, [generationSelection, selectedImage]);
+
+  useEffect(() => {
+    generationVersion.current += 1;
+  }, [pendingEdit.description]);
+
+  async function generateDescription() {
+    if (generationBusy.current || selectedIds.length !== 1 || !selectedImage) return;
+    if (!selectedImage.sourcePath) {
+      setGenerationStatus("The selected image file is unavailable.");
+      return;
+    }
+    generationBusy.current = true;
+    setGeneratingDescription(true);
+    setGenerationStatus("Generating description...");
+    const version = generationVersion.current;
+    try {
+      const result = await aiRequest<{ description: string }>("generate", { sourcePath: selectedImage.sourcePath });
+      if (version !== generationVersion.current) {
+        setGenerationStatus("Generation finished, but the selection or description changed. The result was not applied.");
+        return;
+      }
+      onPendingEditChange((current) => ({ ...current, description: result.description }));
+      setGenerationStatus("Description generated. Review it, then Save Changes.");
+    } catch (error) {
+      if (version === generationVersion.current) {
+        setGenerationStatus(error instanceof Error ? error.message : "Unable to generate description.");
+      }
+    } finally {
+      generationBusy.current = false;
+      setGeneratingDescription(false);
+    }
+  }
+  const hasMultipleSelection = selectedIds.length >= 2;
+  const detailsDisabled = !hasSelection || hasMultipleSelection;
+  const editDisabled = !hasSelection || hasMultipleSelection;
+  const exportDisabled = !hasSelection;
+
+  useEffect(() => {
+    if (hasMultipleSelection && activeTab !== "export") {
+      setActiveTab("export");
+    }
+  }, [activeTab, hasMultipleSelection]);
 
   return (
-    <div className="editor-stack">
+    <fieldset className="editor-stack inspector-save-fields" disabled={saveInProgress} aria-busy={saveInProgress}>
       <div className="editor-panel inspector-panel">
         <div className="panel-header inspector-header">
           <div>
@@ -96,7 +156,9 @@ export function LibraryInspector({
             type="button"
             role="tab"
             aria-selected={activeTab === "details"}
+            aria-disabled={detailsDisabled}
             className={activeTab === "details" ? "inspector-tab inspector-tab-active" : "inspector-tab ghost"}
+            disabled={detailsDisabled}
             onClick={() => setActiveTab("details")}
           >
             Details
@@ -105,7 +167,9 @@ export function LibraryInspector({
             type="button"
             role="tab"
             aria-selected={activeTab === "edit"}
+            aria-disabled={editDisabled}
             className={activeTab === "edit" ? "inspector-tab inspector-tab-active" : "inspector-tab ghost"}
+            disabled={editDisabled}
             onClick={() => setActiveTab("edit")}
           >
             Edit
@@ -114,7 +178,9 @@ export function LibraryInspector({
             type="button"
             role="tab"
             aria-selected={activeTab === "export"}
+            aria-disabled={exportDisabled}
             className={activeTab === "export" ? "inspector-tab inspector-tab-active" : "inspector-tab ghost"}
+            disabled={exportDisabled}
             onClick={() => setActiveTab("export")}
           >
             Export
@@ -131,9 +197,15 @@ export function LibraryInspector({
                 <div className="detail-grid">
                   <DetailRow label="Title" value={selectedImage.title || "Untitled"} />
                   <DetailRow label="Filename" value={selectedImage.filename} />
+                  <DetailRow label="Description" value={selectedImage.description || ""} scope="xmp" />
                   <DetailRow label="Folder" value={selectedImage.folder} />
                   <DetailRow label="Capture Date" value={selectedImage.captureDate || ""} />
-                  <DetailRow label="Rating" value={String(selectedImage.rating)} scope="db+xmp" />
+                  <DetailRow
+                    label="Rating"
+                    value={String(selectedImage.rating)}
+                    scope="db+xmp"
+                    valueNode={<RatingStars rating={selectedImage.rating} />}
+                  />
                   <DetailRow
                     label="Color"
                     value={selectedImage.colorLabel || "None"}
@@ -161,7 +233,7 @@ export function LibraryInspector({
                 <div>
                   <p className="eyebrow">Tags</p>
                   <div className="tag-chip-row">
-                    {selectedImage.tags.map((tag) => (
+                    {getDisplayTags(selectedImage).map((tag) => (
                       <span className="tag-chip" key={tag}>
                         {tag}
                       </span>
@@ -184,10 +256,120 @@ export function LibraryInspector({
           <div className={`inspector-tab-panel ${!hasSelection ? "panel-locked" : ""}`}>
             <div className="inspector-section-header">
               <div>
-                <h3>Batch Edit</h3>
+                <h3>Edit Metadata</h3>
                 <p className="muted">Review the current selection, stage metadata changes, then preview the write plan.</p>
               </div>
               <span className="muted">{selectedIds.length} selected</span>
+            </div>
+
+            <div className="inspector-title-field">
+              <div className="inspector-title-heading">
+                <label htmlFor="inspector-edit-title">Title</label>
+                <button
+                  type="button"
+                  className="ghost inspector-copy-filename"
+                  disabled={selectedIds.length !== 1 || !selectedImage}
+                  onClick={() => {
+                    if (selectedIds.length !== 1 || !selectedImage) return;
+                    const title = selectedImage.filename.replace(/\.[^.]+$/, "");
+                    onPendingEditChange((current) => ({ ...current, title }));
+                  }}
+                >
+                  Copy Filename
+                </button>
+              </div>
+              <input
+                id="inspector-edit-title"
+                value={pendingEdit.title}
+                onChange={(event) =>
+                  onPendingEditChange((current) => ({ ...current, title: event.target.value }))
+                }
+                placeholder="Leave blank to keep unchanged"
+              />
+            </div>
+
+            <div className="inspector-title-field">
+              <div className="inspector-title-heading">
+                <label htmlFor="inspector-edit-description">Description</label>
+                <button
+                  type="button"
+                  className="ghost inspector-copy-filename"
+                  disabled={selectedIds.length !== 1 || !selectedImage || generatingDescription}
+                  onClick={() => generateDescriptionDialogRef.current?.showModal()}
+                >
+                  {generatingDescription ? "Generating..." : "Generate Description"}
+                </button>
+              </div>
+              <textarea
+                aria-busy={generatingDescription}
+                id="inspector-edit-description"
+                value={pendingEdit.description}
+                onChange={(event) =>
+                  onPendingEditChange((current) => ({ ...current, description: event.target.value }))
+                }
+                placeholder="Leave blank to keep unchanged"
+              />
+            </div>
+
+            <p role="status" className="muted">{generationStatus}</p>
+
+            <dialog
+              ref={generateDescriptionDialogRef}
+              className="modal-card generate-description-dialog"
+              aria-labelledby="generate-description-heading"
+              aria-describedby="generate-description-message"
+            >
+              <h3 id="generate-description-heading">Generate Description</h3>
+              <p id="generate-description-message">
+                This functionality will call into an external Ai system.  Press 'Ok' to continue, Press 'Cancel' to abort
+              </p>
+              <form method="dialog" className="action-row">
+                <button type="submit" value="cancel" className="ghost" autoFocus>Cancel</button>
+                <button type="submit" value="ok" onClick={() => void generateDescription()}>Ok</button>
+              </form>
+            </dialog>
+
+            <div className="split-fields">
+              <label>
+                <span>Rating</span>
+                <select
+                  value={pendingEdit.rating ?? ""}
+                  onChange={(event) =>
+                    onPendingEditChange((current) => ({
+                      ...current,
+                      rating: event.target.value ? Number(event.target.value) : null,
+                    }))
+                  }
+                >
+                  <option value="">Unchanged</option>
+                  <option value="-1">Rejected</option>
+                  <option value="0">Unrated</option>
+                  <option value="1">★</option>
+                  <option value="2">★★</option>
+                  <option value="3">★★★</option>
+                  <option value="4">★★★★</option>
+                  <option value="5">★★★★★</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Color label</span>
+                <select
+                  value={pendingEdit.colorLabel ?? "unchanged"}
+                  onChange={(event) =>
+                    onPendingEditChange((current) => ({
+                      ...current,
+                      colorLabel: event.target.value === "unchanged" ? null : event.target.value,
+                    }))
+                  }
+                >
+                  <option value="unchanged">Unchanged</option>
+                  <option value="">No label</option>
+                  {colorLabelOptions.filter((option) => option.value).map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
             </div>
 
             <label>
@@ -207,10 +389,14 @@ export function LibraryInspector({
               </select>
             </label>
 
-            <label>
-              <span>Tags</span>
+            <div className="inspector-title-field">
+              <div className="inspector-title-heading">
+                <label htmlFor="inspector-edit-tags">Tags</label>
+                <GenerateTagsButton selectedImage={selectedImage} selectedIds={selectedIds} connection={connection} onPendingEditChange={onPendingEditChange} />
+              </div>
               <div className="tag-entry-row">
                 <input
+                  id="inspector-edit-tags"
                   list="available-tags"
                   value={tagDraft}
                   onChange={(event) => onTagDraftChange(event.target.value)}
@@ -227,7 +413,10 @@ export function LibraryInspector({
                 </button>
               </div>
               <div className="tag-chip-row">
-                {pendingEdit.tags.map((tag) => (
+                {getDisplayTags({
+                  tags: pendingEdit.tags,
+                  hierarchicalTags: pendingEdit.tags.filter((tag) => tag.includes("|")),
+                }).map((tag) => (
                   <button
                     type="button"
                     className="tag-chip tag-chip-button"
@@ -238,69 +427,6 @@ export function LibraryInspector({
                   </button>
                 ))}
               </div>
-            </label>
-
-            <label>
-              <span>Title</span>
-              <input
-                value={pendingEdit.title}
-                onChange={(event) =>
-                  onPendingEditChange((current) => ({ ...current, title: event.target.value }))
-                }
-                placeholder="Leave blank to keep unchanged"
-              />
-            </label>
-
-            <label>
-              <span>Description</span>
-              <textarea
-                value={pendingEdit.description}
-                onChange={(event) =>
-                  onPendingEditChange((current) => ({ ...current, description: event.target.value }))
-                }
-                placeholder="Leave blank to keep unchanged"
-              />
-            </label>
-
-            <div className="split-fields">
-              <label>
-                <span>Rating</span>
-                <select
-                  value={pendingEdit.rating ?? ""}
-                  onChange={(event) =>
-                    onPendingEditChange((current) => ({
-                      ...current,
-                      rating: event.target.value ? Number(event.target.value) : null,
-                    }))
-                  }
-                >
-                  <option value="">Unchanged</option>
-                  <option value="0">0</option>
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                  <option value="3">3</option>
-                  <option value="4">4</option>
-                  <option value="5">5</option>
-                </select>
-              </label>
-
-              <label>
-                <span>Color label</span>
-                <select
-                  value={pendingEdit.colorLabel ?? ""}
-                  onChange={(event) =>
-                    onPendingEditChange((current) => ({
-                      ...current,
-                      colorLabel: event.target.value || null,
-                    }))
-                  }
-                >
-                  <option value="">Unchanged</option>
-                  {colorLabelOptions.filter((option) => option.value).map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </label>
             </div>
 
             <div className="action-row">
@@ -364,7 +490,7 @@ export function LibraryInspector({
         ) : null}
 
         {activeTab === "export" ? (
-          <div className="inspector-tab-panel">
+          <div className={`inspector-tab-panel ${!hasSelection ? "panel-locked" : ""}`}>
             <div className="inspector-section-header">
               <div>
                 <h3>Export</h3>
@@ -425,6 +551,15 @@ export function LibraryInspector({
                 />
                 <button className="ghost" onClick={() => onPickExportPath("outputPath")}>Browse</button>
               </div>
+            </label>
+
+            <label className="checkbox-row">
+              <span>Clear folder before export</span>
+              <input
+                type="checkbox"
+                checked={exportSettings.clearFolderBeforeExport ?? false}
+                onChange={(event) => onExportSettingsChange((current) => ({ ...current, clearFolderBeforeExport: event.target.checked }))}
+              />
             </label>
 
             <label className="checkbox-row">
@@ -533,15 +668,25 @@ export function LibraryInspector({
 
             <div className="action-row export-actions">
               <button
-                disabled={!connection.libraryDbPath || exportInProgress}
+                disabled={!connection.libraryDbPath || !hasSelection || exportInProgress}
                 onClick={onRunExport}
               >
                 {exportInProgress ? "Exporting..." : "Run Export"}
               </button>
             </div>
+            {!hasSelection ? <div className="panel-lock-overlay">Select one or more thumbnails before exporting.</div> : null}
           </div>
         ) : null}
       </div>
-    </div>
+    </fieldset>
   );
+}
+
+function getDisplayTags(image: Pick<ImageRecord, "tags" | "hierarchicalTags">): string[] {
+  const tags = new Map<string, string>();
+  [...(image.hierarchicalTags ?? []), ...image.tags].forEach(tag => {
+    const value = tag.trim();
+    if (value && !tags.has(value.toLocaleLowerCase())) tags.set(value.toLocaleLowerCase(), value);
+  });
+  return Array.from(tags.values());
 }

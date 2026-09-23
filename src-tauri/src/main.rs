@@ -78,6 +78,12 @@ struct ExportRunPayload {
     stdout: String,
     stderr: String,
     success: bool,
+    #[serde(default, rename = "confirmationRequired")]
+    confirmation_required: bool,
+    #[serde(default, rename = "destinationPath")]
+    destination_path: String,
+    #[serde(default, rename = "existingFileCount")]
+    existing_file_count: usize,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -434,6 +440,7 @@ fn worker_run_export(
         .get("skipExport")
         .and_then(|value| value.as_bool())
         .unwrap_or(false);
+    let clear_folder = payload.get("clearFolderBeforeExport").and_then(|value| value.as_bool()).unwrap_or(false);
     let rating = payload.get("rating").and_then(|value| value.as_i64());
     let color_label = payload
         .get("colorLabel")
@@ -477,6 +484,10 @@ fn worker_run_export(
         height_string = height.to_string();
         arguments.push("--height");
         arguments.push(&height_string);
+    }
+
+    if clear_folder {
+        arguments.push("--clear-folder-before-export");
     }
 
     if skip_export {
@@ -705,10 +716,49 @@ fn darktable_config_dir() -> PathBuf {
     PathBuf::from("darktable")
 }
 
+
+#[tauri::command]
+async fn ai_request(action: String, payload: serde_json::Value) -> Result<serde_json::Value, String> {
+    if !["load", "save", "generate", "generate-tags"].contains(&action.as_str()) {
+        return Err("Unknown AI action.".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::io::Write;
+        use std::process::Stdio;
+        let app_root = worker_app_root();
+        let mut command = Command::new("python");
+        command.current_dir(&app_root)
+            .arg(app_root.join("python").join("ai_worker.py"))
+            .env("PYTHONIOENCODING", "utf-8")
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x08000000);
+        }
+        let mut child = command.spawn().map_err(|_| "Unable to start the AI worker. Check Python installation.".to_string())?;
+        let input = serde_json::to_vec(&serde_json::json!({ "action": action, "payload": payload }))
+            .map_err(|_| "Unable to prepare AI request.".to_string())?;
+        let write_result = child.stdin.take().ok_or("Unable to open AI worker input.".to_string())?
+            .write_all(&input);
+        if write_result.is_err() {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("Unable to send AI request.".to_string());
+        }
+        let output = child.wait_with_output().map_err(|_| "AI worker failed.".to_string())?;
+        if !output.status.success() {
+            return Err("AI worker failed. Check Python installation.".to_string());
+        }
+        serde_json::from_slice(&output.stdout).map_err(|_| "AI worker returned invalid data.".to_string())
+    }).await.map_err(|_| "AI task failed.".to_string())?
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            ai_request,
             default_darktable_paths,
             worker_ping,
             worker_inspect_library,

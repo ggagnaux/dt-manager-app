@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import type { ReactNode } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { ImageRecord } from "../../types";
@@ -41,7 +42,26 @@ export function ColorLabelValue({ value }: { value: string }) {
   );
 }
 
+export function RatingStars({ rating }: { rating: number }) {
+  const clampedRating = Math.max(0, Math.min(5, Math.floor(rating)));
+
+  if (clampedRating === 0) {
+    return <span className="rating-stars rating-stars-empty">Unrated</span>;
+  }
+
+  return (
+    <span className="rating-stars" aria-label={`${clampedRating} out of 5 stars`}>
+      <span aria-hidden="true">{"★".repeat(clampedRating)}</span>
+      <span className="sr-only">{clampedRating} out of 5 stars</span>
+    </span>
+  );
+}
+
 export function PreviewThumb({ image }: { image: ImageRecord }) {
+  const fileSrc = useMemo(
+    () => image.sourcePath ? convertFileSrc(image.sourcePath) : "",
+    [image.sourcePath],
+  );
   const previewable = image.sourcePath
     && /\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(image.sourcePath);
 
@@ -49,8 +69,10 @@ export function PreviewThumb({ image }: { image: ImageRecord }) {
     return (
       <img
         className="thumb-image"
-        src={convertFileSrc(image.sourcePath)}
+        src={fileSrc}
         alt={image.filename}
+        loading="lazy"
+        decoding="async"
       />
     );
   }
