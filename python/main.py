@@ -101,6 +101,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_export_parser.add_argument("--width", type=int)
     run_export_parser.add_argument("--height", type=int)
     run_export_parser.add_argument("--skip-export", action="store_true")
+    run_export_parser.add_argument("--clear-folder-before-export", action="store_true")
     run_export_parser.add_argument("--tags", nargs="*")
     run_export_parser.add_argument("--rating", type=int)
     run_export_parser.add_argument("--color-label", default="")
@@ -215,10 +216,15 @@ def main(argv: list[str] | None = None) -> int:
             width=args.width,
             height=args.height,
             skip_export=args.skip_export,
+            clear_folder_before_export=args.clear_folder_before_export,
             rating=args.rating,
             color_label=args.color_label or None,
         )
-        print(json.dumps(run_export(request)))
+        try:
+            print(json.dumps(run_export(request)))
+        except (OSError, ValueError) as error:
+            print(f"Export aborted: {error}", file=sys.stderr)
+            return 1
         return 0
 
     if args.command == "preview-write-plan":

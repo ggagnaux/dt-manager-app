@@ -1,3 +1,4 @@
+import { ResizableInspectorLayout } from "../components/library/ResizableInspectorLayout";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -35,6 +36,9 @@ import {
 import {
   useLibrarySearchState,
 } from "../hooks/useLibrarySearchState";
+import {
+  SEARCH_RESULT_LIMIT_OPTIONS,
+} from "../types";
 import type {
   ConnectionState,
   ExportSettings,
@@ -42,39 +46,26 @@ import type {
   LibrarySeriesRecord,
   LibrarySeriesSource,
   LibrarySourceKey,
+  SearchSettings,
 } from "../types";
-
-const mockImages: ImageRecord[] = [
-  {
-    id: 1,
-    filename: "HEX-404.jpg",
-    folder: "H:\\Images\\2024\\Illustrations\\Orbs",
-    title: "HEX-404: Adaptive Shell",
-    description: "Specimen metadata preview from XMP.",
-    rating: 5,
-    colorLabel: "green",
-    tags: ["Illustration", "Portfolio", "series|Orbs"],
-  },
-  {
-    id: 2,
-    filename: "HEX-298.jpg",
-    folder: "H:\\Images\\2024\\Illustrations\\Orbs",
-    title: "HEX-298: Night Bloom",
-    description: "Secondary mock record for initial UI scaffolding.",
-    rating: 4,
-    colorLabel: "blue",
-    tags: ["Illustration", "Portfolio", "series|Orbs|Blue"],
-  },
-];
 
 const COLOR_LABEL_OPTIONS = [
   { value: "", label: "No label marker" },
-  { value: "red", label: "ðŸ”´ Red" },
-  { value: "yellow", label: "ðŸŸ¡ Yellow" },
-  { value: "green", label: "ðŸŸ¢ Green" },
-  { value: "blue", label: "ðŸ”µ Blue" },
-  { value: "purple", label: "ðŸŸ£ Purple" },
+  { value: "red", label: "🔴 Red" },
+  { value: "yellow", label: "🟡 Yellow" },
+  { value: "green", label: "🟢 Green" },
+  { value: "blue", label: "🔵 Blue" },
+  { value: "purple", label: "🟣 Purple" },
 ] as const;
+
+function createInitialSearchSettings(): SearchSettings {
+  const stored = Number(window.localStorage.getItem("dt-manager-search-result-limit"));
+  const resultLimit = SEARCH_RESULT_LIMIT_OPTIONS.includes(stored as typeof SEARCH_RESULT_LIMIT_OPTIONS[number])
+    ? stored
+    : 500;
+
+  return { resultLimit };
+}
 
 function getSeriesTags(image: ImageRecord): string[] {
   return Array.from(
@@ -107,11 +98,13 @@ export function LibraryView({
   onSettingsBridgeChange?: (bridge: {
     connection: ConnectionState;
     exportSettings: ExportSettings;
+    searchSettings: SearchSettings;
     theme: "dark" | "light";
     onPickDatabasePath: (field: "libraryDbPath" | "dataDbPath") => Promise<void>;
     onPickExportPath: (field: "outputPath" | "darktableCliPath") => Promise<void>;
     onConnectionChange: Dispatch<SetStateAction<ConnectionState>>;
     onExportSettingsChange: Dispatch<SetStateAction<ExportSettings>>;
+    onSearchSettingsChange: Dispatch<SetStateAction<SearchSettings>>;
     onThemeChange: Dispatch<SetStateAction<"dark" | "light">>;
   }) => void;
   onTagsBridgeChange?: (bridge: {
@@ -147,12 +140,12 @@ export function LibraryView({
     status: "unknown",
     detail: "No library selected yet.",
   });
-  const [selectedIds, setSelectedIds] = useState<number[]>([1]);
+  const [searchSettings, setSearchSettings] = useState<SearchSettings>(createInitialSearchSettings);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [thumbnailLayout, setThumbnailLayout] = useState<"grid" | "rows">("grid");
   const [activeSource, setActiveSource] = useState<LibrarySourceKey>("all");
   const [activeSeriesSourceKey, setActiveSeriesSourceKey] = useState<string | null>(null);
   const [activeSavedPivotKey, setActiveSavedPivotKey] = useState<string | null>(null);
-  const [browserSearchQuery, setBrowserSearchQuery] = useState("");
   const [browserSort, setBrowserSort] = useState<"capture-desc" | "capture-asc" | "title-asc" | "rating-desc">("capture-desc");
   const lastSelectedIndexRef = useRef<number | null>(null);
   const shiftPressedRef = useRef(false);
@@ -179,13 +172,22 @@ export function LibraryView({
     availableTags,
     filters,
     setFilters,
+    queryInProgress,
+    queryProgressMessage,
+    refreshLibraryMetadata,
     refreshLibraryData,
     handleRefreshResults,
     handleResetFilters,
     resetSearchState,
   } = useLibrarySearchState({
-    initialImages: mockImages,
-    onImagesLoaded: (nextImages) => {
+    resultLimit: searchSettings.resultLimit,
+    initialImages: [],
+    onImagesLoaded: (nextImages, preserveSelection) => {
+      if (preserveSelection) {
+        const availableIds = new Set(nextImages.map((image) => image.id));
+        setSelectedIds((current) => current.filter((id) => availableIds.has(id)));
+        return;
+      }
       setSelectedIds(nextImages[0] ? [nextImages[0].id] : []);
       lastSelectedIndexRef.current = nextImages[0] ? 0 : null;
     },
@@ -286,26 +288,7 @@ export function LibraryView({
     return images;
   }, [activeSavedPivotKey, activeSeriesSourceKey, activeSource, images, selectedIdSet]);
   const browserVisibleImages = useMemo(() => {
-    const normalizedQuery = browserSearchQuery.trim().toLocaleLowerCase();
-    const filteredImages = normalizedQuery
-      ? visibleImages.filter((image) => {
-        const haystack = [
-          image.title,
-          image.filename,
-          image.folder,
-          image.description,
-          image.creator,
-          image.rights,
-          image.tags.join(" "),
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLocaleLowerCase();
-        return haystack.includes(normalizedQuery);
-      })
-      : visibleImages;
-
-    return [...filteredImages].sort((left, right) => {
+    return [...visibleImages].sort((left, right) => {
       if (browserSort === "capture-asc" || browserSort === "capture-desc") {
         const leftTime = left.captureDate ? Date.parse(left.captureDate) : 0;
         const rightTime = right.captureDate ? Date.parse(right.captureDate) : 0;
@@ -322,7 +305,13 @@ export function LibraryView({
 
       return left.title.localeCompare(right.title) || left.filename.localeCompare(right.filename);
     });
-  }, [browserSearchQuery, browserSort, visibleImages]);
+  }, [browserSort, visibleImages]);
+  useEffect(() => {
+    if (selectedIds.length === 1) {
+      const index = browserVisibleImages.findIndex((image) => image.id === selectedIds[0]);
+      lastSelectedIndexRef.current = index >= 0 ? index : null;
+    }
+  }, [browserVisibleImages, selectedIds]);
   const visibleSelectedIds = useMemo(
     () => browserVisibleImages.filter((image) => selectedIdSet.has(image.id)).map((image) => image.id),
     [browserVisibleImages, selectedIdSet],
@@ -344,9 +333,12 @@ export function LibraryView({
     browserVisibleImages.find((image) => selectedIdSet.has(image.id)) ??
     visibleImages.find((image) => selectedIdSet.has(image.id)) ??
     images.find((image) => image.id === selectedIds[0]) ??
-    (browserVisibleImages[0] ?? visibleImages[0] ?? images[0] ?? null);
+    null;
   const {
     pendingEdit,
+    pendingImageId,
+    saveInProgress,
+    requestSelectionChange,
     setPendingEdit,
     planPreview,
     planPreviewMessage,
@@ -364,8 +356,20 @@ export function LibraryView({
   } = useLibraryEditState({
     connection,
     selectedIds,
+    selectedImage,
     onRefreshLibraryData: refreshLibraryData,
   });
+  const changedImageIds = useMemo(() => {
+    const normalizePath = (path: string) => path.replace(/\\/g, "/").toLocaleLowerCase();
+    const ids = new Set<number>();
+    pendingDbSyncJobs.forEach((job) => {
+      if (normalizePath(job.libraryDbPath) === normalizePath(connection.libraryDbPath)) {
+        job.imageIds.forEach((id) => ids.add(id));
+      }
+    });
+    if (pendingImageId !== null) ids.add(pendingImageId);
+    return ids;
+  }, [connection.libraryDbPath, pendingDbSyncJobs, pendingImageId]);
   const {
     exportSettings,
     setExportSettings,
@@ -399,6 +403,10 @@ export function LibraryView({
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem("dt-manager-theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    window.localStorage.setItem("dt-manager-search-result-limit", String(searchSettings.resultLimit));
+  }, [searchSettings.resultLimit]);
 
   useEffect(() => {
     onStatusChange?.({
@@ -500,11 +508,21 @@ export function LibraryView({
     lastSelectedIndexRef.current = null;
   }, [activeSavedPivotKey, activeSeriesSourceKey, activeSource]);
 
-  const handleInspectLibrary = useCallback(async () => {
+  const handleConnectLibrary = useCallback(async () => {
+    if (!connection.libraryDbPath) {
+      setConnection((current) => ({
+        ...current,
+        status: "write_blocked",
+        detail: "Choose a Darktable library before connecting.",
+      }));
+      return;
+    }
+
+    resetSearchState();
     const response = await inspectLibrary(connection.libraryDbPath, connection.dataDbPath);
     if (response.ok && response.data) {
       setConnection(response.data);
-      void refreshLibraryData(response.data.libraryDbPath, response.data.dataDbPath);
+      await refreshLibraryMetadata(response.data.libraryDbPath, response.data.dataDbPath);
       return;
     }
 
@@ -513,30 +531,64 @@ export function LibraryView({
       status: "write_blocked",
       detail: response.error ?? "Failed to inspect Darktable library.",
     }));
-  }, [connection.dataDbPath, connection.libraryDbPath, refreshLibraryData]);
+  }, [
+    connection.dataDbPath,
+    connection.libraryDbPath,
+    refreshLibraryMetadata,
+    resetSearchState,
+  ]);
+
+  const handleDisconnect = useCallback(() => {
+    setConnection((current) => ({
+      ...current,
+      status: "unknown",
+      detail: "Disconnected from Darktable library.",
+    }));
+    resetSearchState();
+    resetTagManagerState();
+    resetEditState();
+    resetExportState();
+    setActiveSource("all");
+    setActiveSeriesSourceKey(null);
+    setActiveSavedPivotKey(null);
+  }, [
+    resetEditState,
+    resetExportState,
+    resetSearchState,
+    resetTagManagerState,
+  ]);
 
   useEffect(() => {
     onActionsChange?.({
       isConnected,
-      onConnectOrRefresh: () => void handleInspectLibrary(),
+      onConnectOrRefresh: () => {
+        if (isConnected) {
+          handleDisconnect();
+          return;
+        }
+        void handleConnectLibrary();
+      },
     });
-  }, [handleInspectLibrary, isConnected, onActionsChange]);
+  }, [handleConnectLibrary, handleDisconnect, isConnected, onActionsChange]);
 
   useEffect(() => {
     onSettingsBridgeChange?.({
       connection,
       exportSettings,
+      searchSettings,
       theme,
       onPickDatabasePath: pickDatabasePath,
       onPickExportPath: pickExportPath,
       onConnectionChange: setConnection,
       onExportSettingsChange: setExportSettings,
+      onSearchSettingsChange: setSearchSettings,
       onThemeChange: setTheme,
     });
   }, [
     connection,
     exportSettings,
     onSettingsBridgeChange,
+    searchSettings,
     theme,
   ]);
 
@@ -640,30 +692,19 @@ export function LibraryView({
     }
   }
 
-  function handleThumbnailSelection(
+  async function handleThumbnailSelection(
     imageId: number,
     index: number,
     modifiers: { shiftKey: boolean; toggleKey: boolean },
   ) {
-    setSelectedIds((current) => {
-      const anchorIndex = lastSelectedIndexRef.current;
-      const shouldRangeSelect = shiftPressedRef.current && anchorIndex !== null;
-      if (shouldRangeSelect) {
-        const start = Math.min(anchorIndex, index);
-        const end = Math.max(anchorIndex, index);
-        const rangeIds = visibleImages.slice(start, end + 1).map((image) => image.id);
-        return rangeIds;
-      }
-
-      lastSelectedIndexRef.current = index;
-      if (modifiers.toggleKey) {
-        return current.includes(imageId)
-          ? current.filter((id) => id !== imageId)
-          : [...current, imageId];
-      }
-
-      return [imageId];
-    });
+    const anchorIndex = lastSelectedIndexRef.current;
+    const rangeSelect = (modifiers.shiftKey || shiftPressedRef.current) && anchorIndex !== null;
+    const nextIds = rangeSelect
+      ? browserVisibleImages.slice(Math.min(anchorIndex, index), Math.max(anchorIndex, index) + 1).map(image => image.id)
+      : modifiers.toggleKey
+        ? selectedIds.includes(imageId) ? selectedIds.filter(id => id !== imageId) : [...selectedIds, imageId]
+        : [imageId];
+    if (await requestSelectionChange(nextIds, setSelectedIds) && !rangeSelect) lastSelectedIndexRef.current = index;
   }
 
   async function handleTagAction(action: "create_root" | "create_child" | "rename" | "move") {
@@ -697,21 +738,6 @@ export function LibraryView({
     setTagStatus(response.error ?? "Tag operation failed.");
   }
 
-  function handleDisconnect() {
-    setConnection((current) => ({
-      ...current,
-      status: "unknown",
-      detail: "Disconnected from Darktable library.",
-    }));
-    resetSearchState();
-    resetTagManagerState();
-    resetEditState();
-    resetExportState();
-    setActiveSource("all");
-    setActiveSeriesSourceKey(null);
-    setActiveSavedPivotKey(null);
-  }
-
   function handleSourceChange(source: Exclude<LibrarySourceKey, "series">) {
     setActiveSource(source);
     setActiveSeriesSourceKey(null);
@@ -733,16 +759,12 @@ export function LibraryView({
   return (
     <div className="app-shell">
       <LibrarySidebar
-        connection={connection}
-        workerMessage={workerMessage}
         pendingDbSyncJobs={pendingDbSyncJobs}
-        selectedTagPath={selectedTagPath}
-        availableTagCount={availableTags.length}
-        tagStatus={tagStatus}
         isConnected={isConnected}
         imageCount={browserVisibleImages.length}
         totalImageCount={images.length}
         selectedCount={selectedIds.length}
+        queryInProgress={queryInProgress}
         activeSource={activeSource}
         activeSeriesSourceKey={activeSeriesSourceKey}
         sourceCounts={sourceCounts}
@@ -765,26 +787,25 @@ export function LibraryView({
       />
 
       <main className={`workspace ${!isConnected ? "workspace-locked" : ""}`}>
-        <section className={`content-grid ${!isConnected ? "panel-locked" : ""}`}>
+        <ResizableInspectorLayout className={`content-grid ${!isConnected ? "panel-locked" : ""}`}>
           <LibraryResults
             images={browserVisibleImages}
             selectedIds={visibleSelectedIds}
+            changedImageIds={changedImageIds}
             thumbnailLayout={thumbnailLayout}
             isConnected={isConnected}
             title={browserTitle}
             sourceLabel={activeSavedPivotKey ? "Saved Pivot" : activeSource === "series" ? "Series View" : "Library View"}
-            searchQuery={browserSearchQuery}
             sortValue={browserSort}
             onSelectAllToggle={() => {
-              lastSelectedIndexRef.current = browserVisibleImages.length > 0 ? 0 : null;
-              setSelectedIds((current) =>
-                browserVisibleImages.length > 0 && browserVisibleImages.every((image) => current.includes(image.id))
-                  ? current.filter((id) => !browserVisibleImages.some((image) => image.id === id))
-                  : Array.from(new Set([...current, ...browserVisibleImages.map((image) => image.id)])),
-              );
+              const nextIds = browserVisibleImages.length > 0 && browserVisibleImages.every(image => selectedIds.includes(image.id))
+                ? selectedIds.filter(id => !browserVisibleImages.some(image => image.id === id))
+                : Array.from(new Set([...selectedIds, ...browserVisibleImages.map(image => image.id)]));
+              void requestSelectionChange(nextIds, ids => {
+                setSelectedIds(ids);
+                lastSelectedIndexRef.current = browserVisibleImages.length > 0 ? 0 : null;
+              });
             }}
-            onSearchQueryChange={setBrowserSearchQuery}
-            onClearSearchQuery={() => setBrowserSearchQuery("")}
             onSortChange={setBrowserSort}
             onThumbnailLayoutChange={setThumbnailLayout}
             onThumbnailSelection={(imageId, index, toggleKey, shiftKey) =>
@@ -796,6 +817,7 @@ export function LibraryView({
           />
 
           <LibraryInspector
+            saveInProgress={saveInProgress}
             selectedIds={selectedIds}
             selectedImage={selectedImage}
             hasSelection={hasSelection}
@@ -828,9 +850,10 @@ export function LibraryView({
             onApplyEdits={handleApplyEdits}
           />
           {!isConnected ? <div className="panel-lock-overlay">Connect to view thumbnails and edit metadata.</div> : null}
-        </section>
+        </ResizableInspectorLayout>
       </main>
       <LibraryOverlays
+        saveInProgress={saveInProgress}
         availableTags={availableTags}
         filtersTags={filters.tags}
         exportDialogOpen={exportDialogOpen}
@@ -838,6 +861,8 @@ export function LibraryView({
         exportStatus={exportStatus}
         exportLog={exportLog}
         exportInProgress={exportInProgress}
+        queryInProgress={queryInProgress || saveInProgress}
+        queryProgressMessage={saveInProgress ? "Saving changes..." : queryProgressMessage}
         onCloseExportDialog={() => setExportDialogOpen(false)}
         onCloseSearchTags={() => setSearchTagsOpen(false)}
         onSearchTagsChange={(nextTags) =>

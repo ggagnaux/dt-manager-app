@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { confirm } from "@tauri-apps/plugin-dialog";
+import { useEffect, useRef, useState } from "react";
 import {
   listExportPresets,
   runExport,
@@ -21,6 +22,7 @@ const initialExportSettings: ExportSettings = {
   width: "",
   height: "",
   skipExport: false,
+  clearFolderBeforeExport: false,
   darktableCliPath: "",
 };
 
@@ -55,7 +57,7 @@ export function useLibraryExportState({
   const [exportSettings, setExportSettings] = useState<ExportSettings>(() => {
     const raw = window.localStorage.getItem("dt-manager-export-settings");
     if (raw) {
-      return JSON.parse(raw) as ExportSettings;
+      try { return { ...initialExportSettings, ...JSON.parse(raw) }; } catch { return initialExportSettings; }
     }
     return initialExportSettings;
   });
@@ -67,6 +69,7 @@ export function useLibraryExportState({
   const [exportTagDraft, setExportTagDraft] = useState("");
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportInProgress, setExportInProgress] = useState(false);
+  const exportRunning = useRef(false);
 
   useEffect(() => {
     window.localStorage.setItem("dt-manager-export-settings", JSON.stringify(exportSettings));
@@ -100,7 +103,7 @@ export function useLibraryExportState({
     if (!preset) {
       return;
     }
-    setExportSettings(preset.settings);
+    setExportSettings({ ...initialExportSettings, ...preset.settings });
     setExportStatus(`Loaded export preset '${name}'.`);
   }
 
@@ -124,6 +127,7 @@ export function useLibraryExportState({
   }
 
   async function handleRunExport() {
+    if (exportRunning.current) return;
     if (!connection.libraryDbPath || !exportSettings.outputPath) {
       setExportStatus("Connect to Darktable and choose an export output path first.");
       setExportDialogOpen(true);
@@ -139,18 +143,37 @@ export function useLibraryExportState({
     }
 
     setExportDialogOpen(true);
+    exportRunning.current = true;
     setExportInProgress(true);
     setExportLog(null);
     setExportStatus(`Preparing export for ${sourcePaths.length} image(s)...`);
 
     try {
-      const response = await runExport(connection.libraryDbPath, connection.dataDbPath, {
+      const payload = {
         ...exportSettings,
         rating: exportFilters.rating,
         colorLabel: exportFilters.colorLabel,
         tags: exportFilters.tags.filter(Boolean),
         sourcePaths,
-      });
+      };
+      let response = await runExport(connection.libraryDbPath, connection.dataDbPath, payload);
+      if (response.ok && response.data?.confirmationRequired) {
+        const destination = response.data.destinationPath;
+        if (!destination) throw new Error("Unable to verify the export destination.");
+        setExportStatus("Waiting for permission to clear the destination folder...");
+        const approved = await confirm(
+          `The destination folder currently contains files. Do you wish to clear out this folder first?\n\nThis will delete all files directly in the destination folder:\n${destination}\n\nPress Ok to delete the files and export. Press Cancel to abort.`,
+          { title: "Clear export folder", kind: "warning", okLabel: "Ok", cancelLabel: "Cancel" },
+        );
+        if (!approved) {
+          setExportStatus("Export cancelled. No destination files were removed.");
+          return;
+        }
+        setExportStatus(`Preparing export for ${sourcePaths.length} image(s)...`);
+        response = await runExport(connection.libraryDbPath, connection.dataDbPath, {
+          ...payload, outputPath: destination, clearFolderBeforeExport: true,
+        });
+      }
 
       if (response.ok && response.data) {
         setExportLog(response.data);
@@ -166,6 +189,7 @@ export function useLibraryExportState({
       setExportLog(null);
       setExportStatus(error instanceof Error ? error.message : "Export failed to start.");
     } finally {
+      exportRunning.current = false;
       setExportInProgress(false);
     }
   }

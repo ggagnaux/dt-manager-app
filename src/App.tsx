@@ -9,7 +9,7 @@ import { PlaceholderView } from "./views/PlaceholderView";
 import { SeriesView } from "./views/SeriesView";
 import { SettingsView } from "./views/SettingsView";
 import { TagsView } from "./views/TagsView";
-import type { ConnectionState, ExportSettings, LibrarySeriesRecord } from "./types";
+import type { ConnectionState, ExportSettings, LibrarySeriesRecord, SearchSettings } from "./types";
 
 export default function App() {
   const [activeView, setActiveView] = useState<AppView>("library");
@@ -27,11 +27,13 @@ export default function App() {
   const [librarySettingsBridge, setLibrarySettingsBridge] = useState<{
     connection: ConnectionState;
     exportSettings: ExportSettings;
+    searchSettings: SearchSettings;
     theme: "dark" | "light";
     onPickDatabasePath: (field: "libraryDbPath" | "dataDbPath") => Promise<void>;
     onPickExportPath: (field: "outputPath" | "darktableCliPath") => Promise<void>;
     onConnectionChange: Dispatch<SetStateAction<ConnectionState>>;
     onExportSettingsChange: Dispatch<SetStateAction<ExportSettings>>;
+    onSearchSettingsChange: Dispatch<SetStateAction<SearchSettings>>;
     onThemeChange: Dispatch<SetStateAction<"dark" | "light">>;
   } | null>(null);
   const [libraryTagsBridge, setLibraryTagsBridge] = useState<{
@@ -143,11 +145,13 @@ export default function App() {
             <SettingsView
               connection={librarySettingsBridge.connection}
               exportSettings={librarySettingsBridge.exportSettings}
+              searchSettings={librarySettingsBridge.searchSettings}
               theme={librarySettingsBridge.theme}
               onPickDatabasePath={librarySettingsBridge.onPickDatabasePath}
               onPickExportPath={librarySettingsBridge.onPickExportPath}
               onConnectionChange={librarySettingsBridge.onConnectionChange}
               onExportSettingsChange={librarySettingsBridge.onExportSettingsChange}
+              onSearchSettingsChange={librarySettingsBridge.onSearchSettingsChange}
               onThemeChange={librarySettingsBridge.onThemeChange}
             />
           ) : (

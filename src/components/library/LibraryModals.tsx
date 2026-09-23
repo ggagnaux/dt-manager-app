@@ -1,30 +1,36 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
+import { SEARCH_RESULT_LIMIT_OPTIONS } from "../../types";
 import type {
   ConnectionState,
   ExportRunResult,
   ExportSettings,
+  SearchSettings,
 } from "../../types";
 
 export function SettingsModal({
   connection,
   exportSettings,
+  searchSettings,
   theme,
   onClose,
   onPickDatabasePath,
   onPickExportPath,
   onConnectionChange,
   onExportSettingsChange,
+  onSearchSettingsChange,
   onThemeChange,
 }: {
   connection: ConnectionState;
   exportSettings: ExportSettings;
+  searchSettings: SearchSettings;
   theme: "dark" | "light";
   onClose: () => void;
   onPickDatabasePath: (field: "libraryDbPath" | "dataDbPath") => Promise<void>;
   onPickExportPath: (field: "outputPath" | "darktableCliPath") => Promise<void>;
   onConnectionChange: Dispatch<SetStateAction<ConnectionState>>;
   onExportSettingsChange: Dispatch<SetStateAction<ExportSettings>>;
+  onSearchSettingsChange: Dispatch<SetStateAction<SearchSettings>>;
   onThemeChange: Dispatch<SetStateAction<"dark" | "light">>;
 }) {
   return (
@@ -63,6 +69,22 @@ export function SettingsModal({
               />
               <button className="ghost" onClick={() => void onPickDatabasePath("dataDbPath")}>Browse</button>
             </div>
+          </label>
+          <label>
+            <span>Record limit</span>
+            <select
+              value={searchSettings.resultLimit}
+              onChange={(event) =>
+                onSearchSettingsChange((current) => ({
+                  ...current,
+                  resultLimit: Number(event.target.value),
+                }))
+              }
+            >
+              {SEARCH_RESULT_LIMIT_OPTIONS.map((limit) => (
+                <option key={limit} value={limit}>{limit} records</option>
+              ))}
+            </select>
           </label>
           <label>
             <span>darktable-cli</span>
@@ -166,6 +188,34 @@ export function ExportStatusModal({
         </div>
       </div>
     </aside>
+  );
+}
+
+export function QueryProgressModal({
+  message,
+  saving = false,
+}: {
+  message: string;
+  saving?: boolean;
+}) {
+  return (
+    <div className="modal-backdrop query-progress-backdrop" role="presentation">
+      <div className="modal-card query-progress-modal" role="dialog" aria-modal="true" aria-live="polite" aria-label={saving ? "Save progress" : "Query progress"}>
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">{saving ? "Inspector" : "Library Query"}</p>
+            <h2>{saving ? "Saving changes" : "Searching images"}</h2>
+          </div>
+        </div>
+        <div className="modal-section">
+          <div className="status-banner status-banner-running">
+            <span className="query-spinner" aria-hidden="true" />
+            <strong>{message || "Searching the Darktable library..."}</strong>
+          </div>
+          <p className="muted">{saving ? "Your edits are being saved before continuing." : "DT Manager is reading matching metadata and sidecars. The workspace will be available when the query finishes."}</p>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -340,9 +390,14 @@ export function SearchTagsModal({
   onClear: () => void;
 }) {
   const [searchText, setSearchText] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const visibleTags = availableTags.filter((tag) =>
     tag.toLocaleLowerCase().includes(searchText.trim().toLocaleLowerCase()),
   );
+
+  useEffect(() => {
+    searchInputRef.current?.focus();
+  }, []);
 
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
@@ -379,6 +434,7 @@ export function SearchTagsModal({
             )}
           </div>
           <input
+            ref={searchInputRef}
             className="tag-picker-search"
             value={searchText}
             onChange={(event) => setSearchText(event.target.value)}

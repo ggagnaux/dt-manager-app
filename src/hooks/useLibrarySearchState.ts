@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   listTags,
   searchImages,
@@ -8,43 +8,69 @@ import type {
   SearchFilters,
 } from "../types";
 
-const initialSearchFilters: SearchFilters = {
-  text: "",
-  folder: "",
-  dateFrom: "",
-  dateTo: "",
-  rating: null,
-  colorLabel: "",
-  tags: [],
-  limit: 120,
-};
+function createInitialSearchFilters(limit: number): SearchFilters {
+  return {
+    text: "",
+    folder: "",
+    dateFrom: "",
+    dateTo: "",
+    rating: null,
+    colorLabel: "",
+    tags: [],
+    limit,
+  };
+}
 
 export function useLibrarySearchState({
+  resultLimit,
   initialImages,
   onImagesLoaded,
   onResetSelection,
 }: {
+  resultLimit: number;
   initialImages: ImageRecord[];
-  onImagesLoaded: (images: ImageRecord[]) => void;
+  onImagesLoaded: (images: ImageRecord[], preserveSelection: boolean) => void;
   onResetSelection: () => void;
 }) {
   const [images, setImages] = useState<ImageRecord[]>(initialImages);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
-  const [filters, setFilters] = useState<SearchFilters>(initialSearchFilters);
+  const [filters, setFilters] = useState<SearchFilters>(() => createInitialSearchFilters(resultLimit));
+  const [queryInProgress, setQueryInProgress] = useState(false);
+  const [queryProgressMessage, setQueryProgressMessage] = useState("");
 
-  async function refreshLibraryData(libraryDbPath: string, dataDbPath: string) {
-    const [tagResponse, imageResponse] = await Promise.all([
-      listTags(libraryDbPath, dataDbPath),
-      searchImages(libraryDbPath, dataDbPath, filters),
-    ]);
+  useEffect(() => {
+    setFilters((current) => ({ ...current, limit: resultLimit }));
+  }, [resultLimit]);
+
+  async function refreshLibraryMetadata(libraryDbPath: string, dataDbPath: string) {
+    const tagResponse = await listTags(libraryDbPath, dataDbPath);
 
     if (tagResponse.ok && tagResponse.data) {
       setAvailableTags(tagResponse.data);
     }
+  }
 
-    if (imageResponse.ok && imageResponse.data) {
-      setImages(imageResponse.data);
-      onImagesLoaded(imageResponse.data);
+  async function refreshLibraryData(libraryDbPath: string, dataDbPath: string, preserveSelection = false) {
+    setQueryInProgress(true);
+    setQueryProgressMessage("Searching the Darktable library...");
+
+    try {
+      const [tagResponse, imageResponse] = await Promise.all([
+        listTags(libraryDbPath, dataDbPath),
+        searchImages(libraryDbPath, dataDbPath, filters),
+      ]);
+
+      if (tagResponse.ok && tagResponse.data) {
+        setAvailableTags(tagResponse.data);
+      }
+
+      if (imageResponse.ok && imageResponse.data) {
+        setQueryProgressMessage(`Loaded ${imageResponse.data.length} images.`);
+        setImages(imageResponse.data);
+        onImagesLoaded(imageResponse.data, preserveSelection);
+      }
+    } finally {
+      setQueryInProgress(false);
     }
   }
 
@@ -56,7 +82,7 @@ export function useLibrarySearchState({
   }
 
   function handleResetFilters() {
-    setFilters(initialSearchFilters);
+    setFilters(createInitialSearchFilters(resultLimit));
     setImages([]);
     onResetSelection();
   }
@@ -64,7 +90,7 @@ export function useLibrarySearchState({
   function resetSearchState() {
     setImages([]);
     setAvailableTags([]);
-    setFilters(initialSearchFilters);
+    setFilters(createInitialSearchFilters(resultLimit));
     onResetSelection();
   }
 
@@ -74,6 +100,9 @@ export function useLibrarySearchState({
     availableTags,
     filters,
     setFilters,
+    queryInProgress,
+    queryProgressMessage,
+    refreshLibraryMetadata,
     refreshLibraryData,
     handleRefreshResults,
     handleResetFilters,

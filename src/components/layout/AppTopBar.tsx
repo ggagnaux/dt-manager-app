@@ -34,13 +34,35 @@ export function AppTopBar({
   const pathLabel = libraryStatus?.libraryPath
     ? `Library: ${libraryStatus.libraryPath}`
     : "Library not configured";
+  const isLibraryOnline = libraryActions?.isConnected ?? (
+    libraryStatus?.connectionStatus === "ready" && Boolean(libraryStatus.libraryPath)
+  );
 
   return (
     <header className="app-topbar">
       <div className="app-topbar-brand">
         <div className="app-topbar-brand-copy">
           <p className="eyebrow">DT Manager</p>
-          <h1>DT Manager</h1>
+          <div className="app-topbar-title-row">
+            <h1>DT Manager</h1>
+            <div className="app-topbar-connection-controls">
+              {libraryActions ? (
+                <button
+                  type="button"
+                  className={libraryActions.isConnected ? "ghost" : ""}
+                  onClick={libraryActions.onConnectOrRefresh}
+                >
+                  {libraryActions.isConnected ? "Disconnect Library" : "Connect Library"}
+                </button>
+              ) : null}
+              <span
+                className={`status-pill topbar-online-pill ${isLibraryOnline ? "topbar-online-pill-ready" : "topbar-online-pill-offline"}`}
+                aria-label={`Library is ${isLibraryOnline ? "online" : "offline"}`}
+              >
+                {isLibraryOnline ? "Online" : "Offline"}
+              </span>
+            </div>
+          </div>
           <p className="app-topbar-copy">
             {showLibraryStatus ? pathLabel : "Library-first metadata, tagging, series, and export workflow."}
           </p>
@@ -61,9 +83,9 @@ export function AppTopBar({
           <div className="app-topbar-meta">
             {showLibraryStatus ? (
               <div className="app-topbar-status-cluster" aria-label="Library status">
-                <span className={`status-pill status-${libraryStatus.connectionStatus}`}>
+                {/* <span className={`status-pill status-${libraryStatus.connectionStatus}`}>
                   {connectionStatusLabel}
-                </span>
+                </span> */}
                 <span className="topbar-status-item">
                   {libraryStatus.pendingSyncCount} pending sync items
                 </span>
@@ -73,20 +95,9 @@ export function AppTopBar({
               </div>
             ) : (
               <p className="app-topbar-copy app-topbar-copy-compact">
-                The remaining sections are now staged as dedicated views inside the same app shell.
+                
               </p>
             )}
-            {libraryActions ? (
-              <div className="topbar-quick-actions">
-                <button
-                  type="button"
-                  className={libraryActions.isConnected ? "ghost" : ""}
-                  onClick={libraryActions.onConnectOrRefresh}
-                >
-                  {libraryActions.isConnected ? "Refresh Library" : "Connect Library"}
-                </button>
-              </div>
-            ) : null}
           </div>
         </div>
       </div>

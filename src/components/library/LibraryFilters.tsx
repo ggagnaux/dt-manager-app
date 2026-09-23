@@ -6,6 +6,7 @@ export function LibraryFilters({
   isConnected,
   resultCount,
   selectedCount,
+  queryInProgress,
   variant = "panel",
   colorLabelOptions,
   onFiltersChange,
@@ -17,6 +18,7 @@ export function LibraryFilters({
   isConnected: boolean;
   resultCount: number;
   selectedCount: number;
+  queryInProgress?: boolean;
   variant?: "panel" | "sidebar";
   colorLabelOptions: ReadonlyArray<{ value: string; label: string }>;
   onFiltersChange: Dispatch<SetStateAction<SearchFilters>>;
@@ -66,9 +68,9 @@ export function LibraryFilters({
           }
         >
           <option value="">All ratings</option>
-          <option value="5">5 stars</option>
-          <option value="4">4 stars</option>
-          <option value="3">3 stars</option>
+          <option value="5" aria-label="5 stars">&#9733;&#9733;&#9733;&#9733;&#9733;</option>
+          <option value="4" aria-label="4 stars">&#9733;&#9733;&#9733;&#9733;</option>
+          <option value="3" aria-label="3 stars">&#9733;&#9733;&#9733;</option>
         </select>
         <select
           value={filters.colorLabel}
@@ -126,8 +128,8 @@ export function LibraryFilters({
         <button className="ghost" onClick={onReset}>
           Reset
         </button>
-        <button className={isSidebar ? "" : "ghost"} onClick={onSearch}>
-          Search
+        <button className={isSidebar ? "" : "ghost"} disabled={queryInProgress} onClick={onSearch}>
+          {queryInProgress ? "Searching..." : "Search"}
         </button>
       </div>
       {!isConnected ? <div className="panel-lock-overlay">Connect to search and select images.</div> : null}

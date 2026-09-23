@@ -1,5 +1,6 @@
 import {
   ExportStatusModal,
+  QueryProgressModal,
   SearchTagsModal,
 } from "./LibraryModals";
 import type {
@@ -14,6 +15,9 @@ export function LibraryOverlays({
   exportStatus,
   exportLog,
   exportInProgress,
+  queryInProgress,
+  saveInProgress = false,
+  queryProgressMessage,
   onCloseExportDialog,
   onCloseSearchTags,
   onSearchTagsChange,
@@ -26,6 +30,9 @@ export function LibraryOverlays({
   exportStatus: string;
   exportLog: ExportRunResult | null;
   exportInProgress: boolean;
+  queryInProgress: boolean;
+  saveInProgress?: boolean;
+  queryProgressMessage: string;
   onCloseExportDialog: () => void;
   onCloseSearchTags: () => void;
   onSearchTagsChange: (nextTags: string[]) => void;
@@ -56,6 +63,10 @@ export function LibraryOverlays({
           onChange={onSearchTagsChange}
           onClear={onClearSearchTags}
         />
+      ) : null}
+
+      {queryInProgress ? (
+        <QueryProgressModal message={queryProgressMessage} saving={saveInProgress} />
       ) : null}
     </>
   );

@@ -1,39 +1,11 @@
 {
   "order": [
-    "local-series:series1:1776090850350",
-    "local-series:series2:1776022679131",
-    "local-series:series3:1776022688988",
-    "series|Orbs",
     "series|Orbs|Blue"
   ],
-  "metadata": {},
-  "localSeries": [
-    {
-      "coverFilename": "No cover selected",
-      "description": "This is a series called Series2.",
-      "displayLabel": "Series2",
-      "key": "local-series:series2:1776022679131",
-      "label": "Series2",
-      "status": "active",
-      "tagPath": "Series2"
-    },
-    {
-      "coverFilename": "No cover selected",
-      "description": "This is a series called Series3",
-      "displayLabel": "Series3",
-      "key": "local-series:series3:1776022688988",
-      "label": "Series3",
-      "status": "active",
-      "tagPath": "Series3"
-    },
-    {
-      "coverFilename": "No cover selected",
-      "description": "This is a series called Series1",
-      "displayLabel": "Series1",
-      "key": "local-series:series1:1776090850350",
-      "label": "Series1",
-      "status": "active",
-      "tagPath": "Series1"
+  "metadata": {
+    "series|Orbs": {
+      "description": "This is a series of images that I started work on back in early 2024. Currently, I've produced a little over 500 images in this series. These are the ones that I'm most drawn to."
     }
-  ]
+  },
+  "localSeries": []
 }
